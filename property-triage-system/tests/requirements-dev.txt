@@ -1,0 +1,2 @@
+# Test-only dependencies (the services' own requirements are in code/*/requirements.txt).
+pytest>=8.0
