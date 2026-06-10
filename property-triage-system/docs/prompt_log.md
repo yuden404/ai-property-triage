@@ -51,14 +51,33 @@ _V1–V5 + Final: to be filled when building the n8n flow (Phase 4)._
 ## Surface 3 — RAG insight / citation prompt (Gemini, Service 1)
 **Goal:** instruct Gemini to use only the retrieved comparable listings, cite which listing it drew from, and never fabricate details not present in the retrieved documents.
 
-**Test cases (define before V1):**
+**Prompt location:** `code/rag_service/prompts.py` (`INSIGHT_PROMPT`). **Automated checks per case:** (a) every `L###` id mentioned in the insight must be one of the retrieved ids (regex check → "fabricated ids"); (b) manual read for invented prices/facts; (c) non-comparable inputs must be called out, not force-compared.
 
-| # | Description + retrieved comps | Expected (cites correct listing, no fabrication) |
-|---|---|---|
-| 1 | _TBD_ | _TBD_ |
-| … | … | … |
+**Test cases (defined before V1):**
 
-_V1–V5 + Final: to be filled when building the RAG service (Phase 2)._
+| # | Input description | Type | Expected |
+|---|---|---|---|
+| 1 | 4-room apartment Ramat Gan, 105 sqm, kitchen needs renovation, 2.9M | residential core | compares to Ramat Gan comps, cites ids |
+| 2 | Retail shop 70 sqm Netanya center, 2M | commercial | compares to Netanya retail, cites |
+| 3 | Underground bunker, Mitzpe Ramon desert | no comparable | says "not genuinely comparable" |
+| 4 | Luxury villa Herzliya Pituach, 350 sqm, 18M | high-end | compares to villas, cites |
+| 5 | דירת 3 חדרים ביפו, צריכה שיפוץ, 1.9M (Hebrew) | Hebrew input | grounded comparison, cites |
+| 6 | Industrial warehouse 600 sqm Ashdod | industrial | compares to warehouses, cites |
+| 7 | Office 120 sqm central TLV, 5.5M | office | compares to TLV offices, cites |
+| 8 | Tiny studio 30 sqm Jerusalem, 1.1M | weak comps | flags poor comparability |
+| 9 | House with garden Haifa, 160 sqm, sea view | partial match | cites size/type matches, flags gaps |
+| 10 | "nice apartment" | vague input | states details are missing, no invention |
+
+### V1 — Baseline (2026-06-10)
+Prompt: role ("senior real-estate analyst") + new listing + retrieved comps with ids/scores + 3 rules: (1) base every claim only on the listings above, (2) always cite the listing id "(per L007)", (3) say plainly when comps are not genuinely comparable.
+
+**Results: 10/10 pass.** Across all 10 cases: **0 fabricated listing ids** (regex-verified), citations present in every insight, and the "not comparable" rule fired correctly on cases 3, 8 and 10 (for the vague input it explicitly said price/size/condition are missing instead of inventing them). Case 1 even distinguished the one true comp (L010) from two irrelevant retrievals (office, other city) unprompted.
+
+**Observations for next iterations (not failures):**
+- Case 5: a Hebrew input produced an **English** insight — fine for the n8n pipeline (English brief), but worth a language rule when we wire the WebUI chat to this service.
+- Some insights run long (4+ sentences); a tighter length cap may help the brief composer.
+
+_V2+ will be driven by integration (n8n LLM-Chain consumption, Hebrew handling, length). Final entry after those iterations._
 
 ---
 
