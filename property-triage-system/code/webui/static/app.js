@@ -19,37 +19,55 @@ tabs.forEach((t) => {
 function esc(s) {
   return (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
+// Safe mini-markdown: esc() runs FIRST so any raw HTML in the source is inert,
+// then we add headings / bold / lists. Used for both chat replies and the
+// listing brief — so no un-escaped server HTML is ever injected (no XSS).
 function mdLite(t) {
   let h = esc(t).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   const lines = h.split("\n");
   const out = [];
   let inList = false;
+  const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
   for (const ln of lines) {
-    const m = ln.match(/^\s*[-*]\s+(.*)/);
-    if (m) {
+    const head = ln.match(/^(#{1,6})\s+(.*)/);
+    const item = ln.match(/^\s*[-*]\s+(.*)/);
+    if (head) {
+      closeList();
+      const lvl = Math.min(head[1].length + 1, 4); // # → h2, ## → h3 …
+      out.push(`<h${lvl}>${head[2]}</h${lvl}>`);
+    } else if (item) {
       if (!inList) { out.push("<ul>"); inList = true; }
-      out.push("<li>" + m[1] + "</li>");
+      out.push("<li>" + item[1] + "</li>");
     } else {
-      if (inList) { out.push("</ul>"); inList = false; }
+      closeList();
       if (ln.trim()) out.push("<p>" + ln + "</p>");
     }
   }
-  if (inList) out.push("</ul>");
+  closeList();
   return out.join("");
 }
 function tableHTML(rows, cols) {
   if (!rows || !rows.length) return "";
   const head = "<tr>" + cols.map((c) => `<th>${c.label}</th>`).join("") + "</tr>";
   const body = rows
-    .map((r) => "<tr>" + cols.map((c) => `<td>${esc(String(r[c.key] ?? "—"))}</td>`).join("") + "</tr>")
+    .map((r) => "<tr>" + cols.map((c) => {
+      // c.fmt returns a fixed, developer-defined string (e.g. ✓/✗) → trusted;
+      // the default path escapes the raw cell value.
+      const cell = c.fmt ? c.fmt(r[c.key]) : esc(String(r[c.key] ?? "—"));
+      return `<td>${cell}</td>`;
+    }).join("") + "</tr>")
     .join("");
   return `<div class="table-wrap"><table>${head}${body}</table></div>`;
 }
+// Guardrail pass/fail → glyph (null/undefined → em-dash for "n/a")
+const passFmt = (v) => (v === true ? "✓" : v === false ? "✗" : "—");
 
 /* ---------------------------- Chat ------------------------------ */
 const chatWindow = document.getElementById("chat-window");
 const chatForm = document.getElementById("chat-form");
 const chatText = document.getElementById("chat-text");
+const chatSend = document.getElementById("chat-send");
+const chatClear = document.getElementById("chat-clear");
 const suggestionsEl = document.getElementById("suggestions");
 const SUGGESTIONS = [
   "Which listings need renovation?",
@@ -90,9 +108,19 @@ function greet() {
   );
 }
 
+let chatBusy = false;
+
+function setChatBusy(busy) {
+  chatBusy = busy;
+  chatText.disabled = busy;
+  chatSend.disabled = busy;
+}
+
 async function sendMessage(text) {
   text = (text || "").trim();
-  if (!text) return;
+  if (!text || chatBusy) return; // ignore re-entrancy while a reply is streaming
+  setChatBusy(true);
+
   messages.push({ role: "user", content: text });
   chatWindow.appendChild(bubbleEl("user", esc(text)));
   suggestionsEl.innerHTML = "";
@@ -110,6 +138,8 @@ async function sendMessage(text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ history: messages }),
     });
+    if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let acc = "";
@@ -120,13 +150,33 @@ async function sendMessage(text) {
       bubble.innerHTML = mdLite(acc);
       scrollChat();
     }
-    messages.push({ role: "assistant", content: acc });
+    acc += decoder.decode(); // flush any trailing multi-byte char (Hebrew)
+    if (acc.trim()) {
+      bubble.innerHTML = mdLite(acc);
+      messages.push({ role: "assistant", content: acc }); // persist only a real reply
+    } else {
+      bubble.innerHTML = "<em>No response — please try again.</em>";
+      messages.pop(); // drop the user turn so history stays clean
+    }
   } catch (e) {
-    bubble.innerHTML = "⚠️ Couldn't reach the server.";
+    bubble.innerHTML = "<em>⚠️ Couldn't reach the assistant — please try again.</em>";
+    messages.pop(); // failed turn is NOT added to history (no polluted context)
+  } finally {
+    setChatBusy(false);
+    chatText.focus();
   }
 }
 
 chatForm.addEventListener("submit", (e) => { e.preventDefault(); sendMessage(chatText.value); });
+if (chatClear) {
+  chatClear.addEventListener("click", () => {
+    if (chatBusy) return; // don't wipe the conversation mid-stream
+    messages = [];
+    chatWindow.innerHTML = "";
+    greet();
+    renderSuggestions();
+  });
+}
 greet();
 renderSuggestions();
 
@@ -137,6 +187,7 @@ const previews = document.getElementById("previews");
 const submitForm = document.getElementById("submit-form");
 const resultEl = document.getElementById("result");
 let selectedFiles = [];
+let previewUrls = []; // object URLs currently shown — revoked before re-render to avoid leaks
 
 dropzone.addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("drag"); });
@@ -148,17 +199,35 @@ dropzone.addEventListener("drop", (e) => {
 fileInput.addEventListener("change", () => addFiles(fileInput.files));
 
 function addFiles(fileList) {
-  for (const f of fileList) if (f.type.startsWith("image/")) selectedFiles.push(f);
+  for (const f of fileList) {
+    if (!f.type.startsWith("image/")) continue;
+    // de-dupe: same name + size + lastModified ⇒ already picked
+    if (selectedFiles.some((g) => g.name === f.name && g.size === f.size && g.lastModified === f.lastModified)) continue;
+    selectedFiles.push(f);
+  }
   renderPreviews();
 }
 function renderPreviews() {
+  previewUrls.forEach(URL.revokeObjectURL); // release the previous batch first
+  previewUrls = [];
   previews.innerHTML = "";
   selectedFiles.forEach((f) => {
+    const url = URL.createObjectURL(f);
+    previewUrls.push(url);
     const div = document.createElement("div");
     div.className = "preview";
-    div.innerHTML = `<img src="${URL.createObjectURL(f)}" alt=""><span>${esc(f.name)}</span>`;
+    div.innerHTML = `<img src="${url}" alt=""><span>${esc(f.name)}</span>`;
     previews.appendChild(div);
   });
+}
+function resetSubmitForm() {
+  previewUrls.forEach(URL.revokeObjectURL);
+  previewUrls = [];
+  selectedFiles = [];
+  previews.innerHTML = "";
+  fileInput.value = "";
+  document.getElementById("desc").value = "";
+  document.getElementById("agent").value = "";
 }
 
 submitForm.addEventListener("submit", async (e) => {
@@ -176,6 +245,9 @@ submitForm.addEventListener("submit", async (e) => {
     });
     const data = await resp.json();
     renderResult(data);
+    // On a successful (non-rejected) submission, clear the form + previews so the
+    // next listing starts clean and the old images aren't re-sent.
+    if (!data.error && data.status !== "rejected") resetSubmitForm();
   } catch (e) {
     resultEl.innerHTML = `<div class="card"><span class="pill pill-bad">Request failed.</span></div>`;
   } finally {
@@ -186,9 +258,19 @@ submitForm.addEventListener("submit", async (e) => {
 function renderResult(d) {
   if (d.error) { resultEl.innerHTML = `<div class="card"><span class="pill pill-bad">${esc(d.error)}</span></div>`; return; }
   const status = d.status || "ok";
+
+  // Rejected by the guardrail: show the reason and STOP — never display the
+  // blocked brief or any tables for content the pipeline refused to publish.
+  if (status === "rejected") {
+    resultEl.innerHTML = `<div class="card">
+      <div class="status-line"><span>Submission rejected</span> <span class="pill pill-bad">blocked by guardrail</span></div>
+      <p class="panel-intro">${esc(d.reason || "This submission was not accepted.")}</p>
+    </div>`;
+    return;
+  }
+
   let pill = `<span class="pill pill-ok">routed → ${esc(d.routing || "—")}</span>`;
-  if (status === "rejected") pill = `<span class="pill pill-bad">rejected by guardrail</span>`;
-  else if (status === "review") pill = `<span class="pill pill-review">held for review</span>`;
+  if (status === "review") pill = `<span class="pill pill-review">held for review</span>`;
 
   const guard = d.guardrail || {};
   const imgs = tableHTML(d.images, [
@@ -201,7 +283,7 @@ function renderResult(d) {
   resultEl.innerHTML = `
     <div class="card">
       <div class="status-line"><span>Listing processed</span> ${pill}</div>
-      ${d.brief_html ? `<div class="brief">${d.brief_html}</div>` : ""}
+      ${d.brief_markdown ? `<div class="brief">${mdLite(d.brief_markdown)}</div>` : ""}
       ${imgs ? `<h3 class="chart-title" style="margin-top:18px">Image analysis</h3>${imgs}` : ""}
       ${sims ? `<h3 class="chart-title" style="margin-top:18px">Similar listings</h3>${sims}` : ""}
       <p class="panel-intro" style="margin-top:14px">Guardrails — input: ${guard.input_pass} · output: ${guard.output_pass} · exec: ${d.exec_ms ?? "?"} ms</p>
@@ -263,6 +345,7 @@ async function loadDashboard() {
   document.getElementById("recent-table").innerHTML = tableHTML(d.recent, [
     { key: "ts", label: "Time" }, { key: "agent", label: "Agent" }, { key: "property_type", label: "Type" },
     { key: "location", label: "Location" }, { key: "routing", label: "Team" }, { key: "status", label: "Status" },
+    { key: "input_pass", label: "Input", fmt: passFmt }, { key: "output_pass", label: "Output", fmt: passFmt },
     { key: "avg_condition", label: "Avg cond." }, { key: "exec_ms", label: "ms" },
   ]);
 }

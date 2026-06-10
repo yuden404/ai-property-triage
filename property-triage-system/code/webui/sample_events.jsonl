@@ -1,6 +1,6 @@
 {"ts": "2026-06-05T09:14:00", "agent": "Dana", "property_type": "apartment", "location": "Ramat Gan", "status": "ok", "routing": "residential", "avg_condition": 3.7, "input_pass": true, "output_pass": true, "exec_ms": 4100}
 {"ts": "2026-06-05T10:02:00", "agent": "Yossi", "property_type": "office", "location": "Tel Aviv", "status": "ok", "routing": "commercial", "avg_condition": 4.2, "input_pass": true, "output_pass": true, "exec_ms": 5200}
-{"ts": "2026-06-05T11:37:00", "agent": "Dana", "property_type": "—", "location": "—", "status": "rejected", "routing": "-", "avg_condition": null, "input_pass": false, "output_pass": null, "exec_ms": 760}
+{"ts": "2026-06-05T11:37:00", "agent": "Dana", "property_type": "—", "location": "—", "status": "rejected", "routing": "—", "avg_condition": null, "input_pass": false, "output_pass": null, "exec_ms": 760}
 {"ts": "2026-06-05T13:20:00", "agent": "Maya", "property_type": "house", "location": "Haifa", "status": "ok", "routing": "residential", "avg_condition": 2.9, "input_pass": true, "output_pass": true, "exec_ms": 3900}
 {"ts": "2026-06-05T14:55:00", "agent": "Yossi", "property_type": "villa", "location": "Herzliya", "status": "review", "routing": "residential", "avg_condition": 3.1, "input_pass": true, "output_pass": false, "exec_ms": 6100}
 {"ts": "2026-06-05T16:09:00", "agent": "Maya", "property_type": "retail", "location": "Netanya", "status": "ok", "routing": "commercial", "avg_condition": 4.5, "input_pass": true, "output_pass": true, "exec_ms": 4800}

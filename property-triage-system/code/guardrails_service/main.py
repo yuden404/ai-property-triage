@@ -18,15 +18,25 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from guardrails_service.prompts import INPUT_CLASSIFIER_PROMPT, OUTPUT_AUDITOR_PROMPT
-from shared.aws_utils import session
+from shared.aws_utils import client
 from shared.gemini_utils import generate
 
-GUARDRAIL_ID = os.getenv("GUARDRAIL_ID", "huksxm9z68f6")
+try:  # load this service's .env (no-op if python-dotenv or the file is absent)
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).with_name(".env"))
+except ImportError:
+    pass
+
+GUARDRAIL_ID = os.getenv("GUARDRAIL_ID")
+if not GUARDRAIL_ID:
+    raise RuntimeError("GUARDRAIL_ID is required — set it in code/guardrails_service/.env (see .env.example)")
 GUARDRAIL_VERSION = os.getenv("GUARDRAIL_VERSION", "DRAFT")
 
 REJECT_MESSAGES = {  # multilingual extension: polite, localized rejection
@@ -36,8 +46,14 @@ REJECT_MESSAGES = {  # multilingual extension: polite, localized rejection
                    "property: type, location, size, rooms, price and key features.",
 }
 
+# Cheap pre-filter: the second (OUTPUT-source) Bedrock call exists only to mask
+# PII. Skip it unless the text actually looks like it contains an email, or a
+# phone/card-length digit run — no such pattern ⇒ nothing to anonymize. Card
+# numbers (BLOCK-level) are long digit runs, so they still trip this and get caught.
+_PII_HINT = re.compile(r"[\w.+-]+@[\w-]+\.\w+|\+?\d[\d\s().\-]{7,}\d")
+
 app = FastAPI(title="Property Triage — Guardrails Service")
-_runtime = session().client("bedrock-runtime")
+_runtime = client("bedrock-runtime")
 
 
 class CheckRequest(BaseModel):
@@ -102,10 +118,12 @@ def check_input(req: CheckRequest):
 
     # PII masking quirk: Bedrock only ANONYMIZEs with source=OUTPUT, so run a
     # second pass purely to harvest the masked text (and catch BLOCK-level PII).
-    mask = _apply_guardrail(text, "OUTPUT")
-    if mask["blocked"]:
-        return {"pass": False, "reason": "; ".join(mask["reasons"]) or "safety policy", "safe_text": ""}
-    gr["masked_text"] = mask["masked_text"] or gr["masked_text"]
+    # Only pay for that call when the text actually looks like it carries PII.
+    if _PII_HINT.search(text):
+        mask = _apply_guardrail(text, "OUTPUT")
+        if mask["blocked"]:
+            return {"pass": False, "reason": "; ".join(mask["reasons"]) or "safety policy", "safe_text": ""}
+        gr["masked_text"] = mask["masked_text"] or gr["masked_text"]
 
     # Layer 2 — allow-list classifier (Gemini): genuine listing in he/en
     try:

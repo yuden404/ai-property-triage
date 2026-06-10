@@ -20,6 +20,5 @@
     {"id": "L012", "text": "3BR apartment, Givatayim, 90 sqm, renovated, balcony", "score": 0.81},
     {"id": "L019", "text": "4BR apartment, Ramat Gan, 110 sqm, parking, near park", "score": 0.76}
   ],
-  "guardrail": {"input_pass": true, "output_pass": true},
-  "exec_ms": 4200
+  "guardrail": {"input_pass": true, "output_pass": true}
 }

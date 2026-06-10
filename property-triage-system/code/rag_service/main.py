@@ -13,19 +13,29 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from rag_service.prompts import INSIGHT_PROMPT
-from shared.aws_utils import session
+from shared.aws_utils import client
 from shared.gemini_utils import generate
 
-KB_ID = os.getenv("KB_ID", "3KTFERDLUV")
+try:  # load this service's .env (no-op if python-dotenv or the file is absent)
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).with_name(".env"))
+except ImportError:
+    pass
+
+KB_ID = os.getenv("KB_ID")
+if not KB_ID:
+    raise RuntimeError("KB_ID is required — set it in code/rag_service/.env (see .env.example)")
 TOP_K = int(os.getenv("TOP_K", "3"))
 
 app = FastAPI(title="Property Triage — RAG Service")
-_runtime = session().client("bedrock-agent-runtime")
+_runtime = client("bedrock-agent-runtime")
 
 
 class QueryRequest(BaseModel):

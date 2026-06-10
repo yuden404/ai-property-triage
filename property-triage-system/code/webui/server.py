@@ -16,11 +16,17 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-import markdown as md
 import requests
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 
 from system_prompts import REALESTATE_SYSTEM_PROMPT
+
+try:  # load webui/.env so N8N_WEBHOOK_URL etc. actually take effect (no-op if absent)
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).with_name(".env"))
+except ImportError:
+    pass
 
 # --------------------------------------------------------------------------- #
 # Config (env with safe defaults)
@@ -56,13 +62,32 @@ def _read_jsonl(path: Path) -> list[dict]:
     return out
 
 
+# The listings file is read on every chat turn (it becomes the grounding context).
+# Cache it and re-read only when the file actually changes (mtime or size) — a long
+# conversation no longer hits the disk on every message, and a new submission
+# (which appends to the file) refreshes the cache automatically.
+_listings_cache: dict = {"sig": None, "data": []}
+
+
+def _read_jsonl_cached(path: Path, cache: dict) -> list[dict]:
+    try:
+        st = path.stat()
+        sig = (st.st_mtime_ns, st.st_size)
+    except FileNotFoundError:
+        sig = None
+    if cache["sig"] != sig:
+        cache["sig"] = sig
+        cache["data"] = _read_jsonl(path)
+    return cache["data"]
+
+
 def load_events() -> tuple[list[dict], bool]:
     real = _read_jsonl(EVENTS_LOG)
     return (real, False) if real else (_read_jsonl(SAMPLE_EVENTS), True)
 
 
 def load_listings() -> tuple[list[dict], bool]:
-    real = _read_jsonl(LISTINGS_STORE)
+    real = _read_jsonl_cached(LISTINGS_STORE, _listings_cache)
     return (real, False) if real else (_read_jsonl(SAMPLE_LISTINGS), True)
 
 
@@ -122,7 +147,7 @@ def log_event(agent: str, result: dict, elapsed_ms: int) -> None:
 # --------------------------------------------------------------------------- #
 def build_messages(history: list[dict]) -> list[dict]:
     """System prompt + per-turn language directive + the listings context."""
-    last_user = next((m["content"] for m in reversed(history) if m.get("role") == "user"), "")
+    last_user = next((m.get("content", "") for m in reversed(history) if m.get("role") == "user"), "")
     lang = "Hebrew" if re.search(r"[֐-׿]", last_user) else "English"
     directive = (
         f"CRITICAL: The user's message is in {lang}. Your ENTIRE reply — including "
@@ -142,7 +167,9 @@ def build_messages(history: list[dict]) -> list[dict]:
     return [{"role": "system", "content": "\n\n".join(parts)}] + history
 
 
-def stream_ollama(messages: list[dict]):
+def open_ollama_stream(messages: list[dict]):
+    """Open the Ollama chat stream. Raises RequestException if it can't connect —
+    callers turn that into a clean HTTP error BEFORE any streaming begins."""
     resp = requests.post(
         f"{OLLAMA_URL}/api/chat",
         json={"model": OLLAMA_MODEL, "messages": messages, "stream": True},
@@ -150,6 +177,10 @@ def stream_ollama(messages: list[dict]):
         timeout=120,
     )
     resp.raise_for_status()
+    return resp
+
+
+def iter_ollama_chunks(resp):
     for line in resp.iter_lines():
         if not line:
             continue
@@ -175,7 +206,12 @@ def submit_listing(payload: dict) -> tuple[dict, int]:
         resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=120)
         resp.raise_for_status()
         result = resp.json()
-    return result, int((time.perf_counter() - start) * 1000)
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    # Report the REAL round-trip we just measured. Keep a backend-provided value
+    # only if it sent one (n8n might); the mock no longer carries a canned
+    # exec_ms, so the dashboard reflects actual latency.
+    result.setdefault("exec_ms", elapsed_ms)
+    return result, elapsed_ms
 
 
 # --------------------------------------------------------------------------- #
@@ -191,15 +227,15 @@ def api_chat():
     history = (request.get_json(silent=True) or {}).get("history", [])
     messages = build_messages(history)
 
-    @stream_with_context
-    def generate():
-        try:
-            for chunk in stream_ollama(messages):
-                yield chunk
-        except requests.exceptions.RequestException:
-            yield "\n\n⚠️ Couldn't reach Ollama. Run `ollama serve` and `ollama pull llama3.1`."
+    # Connect to Ollama BEFORE returning a streaming Response — a connection
+    # failure becomes a clean 502 (the client shows an error and does NOT store
+    # a fake assistant turn), instead of streaming error text as a reply.
+    try:
+        resp = open_ollama_stream(messages)
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "Couldn't reach Ollama. Run `ollama serve` and `ollama pull llama3.1`."}), 502
 
-    return Response(generate(), mimetype="text/plain; charset=utf-8")
+    return Response(stream_with_context(iter_ollama_chunks(resp)), mimetype="text/plain; charset=utf-8")
 
 
 @app.route("/api/submit", methods=["POST"])
@@ -215,10 +251,13 @@ def api_submit():
         result, elapsed_ms = submit_listing(payload)
     except requests.exceptions.RequestException as exc:
         return jsonify({"error": f"Couldn't reach the n8n webhook: {exc}"}), 502
-    save_listing(agent_name, description, images, result)
+    # Log every event (incl. rejected) for the dashboard, but only feed ACCEPTED
+    # listings into the chat's grounding store — never persist rejected/spam input.
     log_event(agent_name, result, elapsed_ms)
-    if result.get("brief_markdown"):
-        result["brief_html"] = md.markdown(result["brief_markdown"], extensions=["extra"])
+    if result.get("status") != "rejected":
+        save_listing(agent_name, description, images, result)
+    # brief_markdown is rendered safely client-side (mdLite escapes HTML) — no raw
+    # HTML is generated server-side, closing the stored-XSS vector.
     return jsonify(result)
 
 
@@ -252,4 +291,8 @@ def api_dashboard():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=True)
+    # debug is OFF by default; enable only locally via FLASK_DEBUG=1.
+    # Never run the Werkzeug debugger on a public bind (RCE risk).
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    host = os.getenv("HOST", "127.0.0.1")
+    app.run(host=host, port=int(os.getenv("PORT", "5050")), debug=debug)
