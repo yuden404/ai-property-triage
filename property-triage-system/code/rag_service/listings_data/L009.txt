@@ -1,0 +1,9 @@
+Listing L009: Executive Office on Rothschild Blvd
+Type: office
+Location: Tel Aviv, Rothschild Blvd
+Price: 6,500,000 ILS
+Rooms: 0
+Size: 120 sqm
+Condition score: 5/5
+Features: prime location, modern design, private balcony, underground parking, 24/7 security, city views
+Description: Secure an executive 120 sqm office space on Tel Aviv's prestigious Rothschild Blvd for 6,500,000 ILS. This unit is in pristine condition, offering a modern design and a private balcony with city views. Benefit from underground parking and 24/7 security in a truly prime business location.

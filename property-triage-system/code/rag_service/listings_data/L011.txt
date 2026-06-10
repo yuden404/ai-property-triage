@@ -1,0 +1,9 @@
+Listing L011: Luxury 6BR Villa in Herzliya Pituach
+Type: villa
+Location: Herzliya, Pituach
+Price: 28,000,000 ILS
+Rooms: 6
+Size: 500 sqm
+Condition score: 5/5
+Features: private pool, large garden, sea proximity, smart home system, home cinema, chef's kitchen
+Description: An exquisite 6-room, 500 sqm luxury villa in exclusive Herzliya Pituach awaits for 28,000,000 ILS. This pristine property boasts a private pool, a sprawling garden, and is just steps from the sea. Features include a state-of-the-art smart home system and a gourmet chef's kitchen.

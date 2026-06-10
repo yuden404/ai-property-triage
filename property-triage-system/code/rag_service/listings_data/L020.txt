@@ -1,0 +1,9 @@
+Listing L020: Large Warehouse in Eilat Industrial Zone
+Type: industrial
+Location: Eilat, Industrial Zone
+Price: 4,800,000 ILS
+Rooms: 0
+Size: 700 sqm
+Condition score: 2/5
+Features: high ceilings, multiple access points, close to port, forklift access, requires modernization
+Description: An expansive 700 sqm warehouse in Eilat's Industrial Zone is on the market for 4,800,000 ILS. With a condition score of 2, this property needs modernization but offers huge potential due to its size and high ceilings. Its strategic location close to the port and multiple access points make it ideal for logistics.

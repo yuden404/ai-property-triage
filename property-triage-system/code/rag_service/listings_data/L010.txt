@@ -1,0 +1,9 @@
+Listing L010: 4BR Apartment in Quiet Borochov Neighborhood
+Type: apartment
+Location: Ramat Gan, Borochov
+Price: 4,200,000 ILS
+Rooms: 4
+Size: 110 sqm
+Condition score: 4/5
+Features: quiet street, green surroundings, renovated bathrooms, elevator, storage unit
+Description: This beautiful 4-room, 110 sqm apartment in Ramat Gan's tranquil Borochov neighborhood is available for 4,200,000 ILS. In very good condition with renovated bathrooms, it offers a peaceful living environment. Enjoy green surroundings and the convenience of an elevator and dedicated storage.

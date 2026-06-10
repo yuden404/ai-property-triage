@@ -1,0 +1,9 @@
+Listing L005: Renovated 5BR House in Herzliya B
+Type: house
+Location: Herzliya, Herzliya B
+Price: 9,500,000 ILS
+Rooms: 5
+Size: 220 sqm
+Condition score: 5/5
+Features: private garden, swimming pool, smart home system, 2 parking spots, jacuzzi, study room
+Description: Experience luxury in this pristine 5-room, 220 sqm fully renovated house in sought-after Herzliya B, priced at 9,500,000 ILS. Boasting a perfect condition score of 5, it includes a beautiful private garden and a refreshing swimming pool. This smart home system-equipped property is ready for immediate upscale living.

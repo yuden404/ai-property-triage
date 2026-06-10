@@ -10,7 +10,7 @@ This is the **living** project doc: it tracks decisions and progress as we build
 ## Progress tracker
 - [x] **Phase 0 — Scaffold**: folder structure ✓ · venv + deps ✓ · living docs ✓ (`PROJECT_PLAN.md`, `PROJECT_BOOK.md`+PDF, `prompt_log.md`) · Ollama ✓ (`llama3.1`)
 - [x] **Phase 1 — Full UI layer** ✓ — 3-tab Streamlit, validated (AppTest, no exceptions): **Assistant** (Ollama `llama3.1`) answers about the entered listings + general help; **Submit** with drag-&-drop image upload (MOCK mode); **Dashboard** with charts + rich table. Prompt Surface #5 iterated to **V6** (10/10); themed UI, Deploy button hidden. → **now being rebuilt as HTML/CSS/JS + Flask** (instructor permits; same features, all Python logic reused).
-- [ ] **Phase 2 — Bedrock setup + microservices** (RAG, Guardrails, LangGraph, Image stub)
+- [~] **Phase 2 — Bedrock setup + microservices** — ✅ AWS profile (`course`) · ✅ Gemini key in Secrets Manager · ✅ 24 synthetic listings (Gemini) → S3 · ✅ **Bedrock KB live on S3 Vectors** (`KB_ID=3KTFERDLUV`, ingestion 24/24, retrieval verified) · ⬜ RAG service · ⬜ Guardrails service · ⬜ LangGraph agent · ⬜ Image stub
 - [ ] **Phase 3 — Image Analyser training** ⟨after the class lesson, ~2026-06-09⟩
 - [ ] **Phase 4 — n8n flow** (8 nodes) + wire the WebUI to the real webhook
 - [ ] **Phase 5 — Excellent polish** (prompt logs to V5, output-guardrail review path, docs)
@@ -30,6 +30,9 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | 2026-06-09 | **Chat answers about entered listings** (per instructor) | Submitted listings persisted (`listings.jsonl`) + injected as context into the Ollama chat; becomes the Bedrock RAG/KB source in Phase 2 |
 | 2026-06-09 | **WebUI = custom HTML/CSS/JS + Flask** (instructor permits; was Streamlit) | Full design control + real-product feel; the Flask backend reuses all the existing Python logic (Ollama streaming, listings store, mock, dashboard, prompt) |
 | 2026-06-10 | **Git identity for this repo = `yehuda.rokach@gmail.com`** (local config) | Personal course project — do NOT commit with the work (Cloudinary) account; repo-local `git config`, global work config untouched |
+| 2026-06-10 | **Pushed to GitHub: `yuden404/ai-property-triage`** (public, personal account) | Remote URL pins the `yuden404` user; work gh account stays the active one |
+| 2026-06-10 | **AWS = Yehuda's personal account `928974129332`**, IAM user `course-user`, profile `course`, `us-east-1` | There is no separate course account; costs are on Yehuda → keep them near zero |
+| 2026-06-10 | **KB vector store = S3 Vectors** (not OpenSearch Serverless) | OpenSearch idles at ~$5–6/day on a personal account; S3 Vectors costs cents and is available in the account (verified via boto3) |
 
 ## Rubric self-assessment (filled at the final code review)
 | Criterion | Weight | Target | Actual (final) |

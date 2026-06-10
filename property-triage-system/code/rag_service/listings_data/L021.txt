@@ -1,0 +1,9 @@
+Listing L021: Prime Retail Storefront in City Center
+Type: retail
+Location: Netanya, City Center
+Price: 3,800,000 ILS
+Rooms: 0
+Size: 80 sqm
+Condition score: 3/5
+Features: street-level, prominent visibility, storage room, public parking nearby, restroom
+Description: A prime 80 sqm street-level retail storefront in Netanya's bustling City Center is available for 3,800,000 ILS. In good condition, it offers prominent visibility and ample storage space. This location benefits from high foot traffic and convenient public parking nearby, perfect for any business.

@@ -1,0 +1,9 @@
+Listing L007: Warehouse with Office Space in Holon Industrial Zone
+Type: industrial
+Location: Holon, Industrial Zone
+Price: 5,800,000 ILS
+Rooms: 0
+Size: 450 sqm
+Condition score: 3/5
+Features: high ceilings, loading dock, office area, 3-phase electricity, easy access to highway
+Description: A versatile 450 sqm industrial warehouse in Holon's prime Industrial Zone is available for 5,800,000 ILS. With a condition score of 3, this unit is well-maintained and includes an integrated office area and a convenient loading dock. Benefit from high ceilings and excellent highway access for logistics.

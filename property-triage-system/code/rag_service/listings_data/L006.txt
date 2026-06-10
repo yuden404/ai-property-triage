@@ -1,0 +1,9 @@
+Listing L006: Sea View 2BR Apartment in Ir Yamim
+Type: apartment
+Location: Netanya, Ir Yamim
+Price: 3,100,000 ILS
+Rooms: 2
+Size: 75 sqm
+Condition score: 4/5
+Features: sea view, balcony, underground parking, elevator, gym access, close to beach
+Description: Enjoy breathtaking sea views from this 2-room, 75 sqm apartment in Netanya's desirable Ir Yamim, offered at 3,100,000 ILS. In excellent condition, this property features a lovely balcony and convenient underground parking. Live steps away from the beach with access to building amenities like a gym.

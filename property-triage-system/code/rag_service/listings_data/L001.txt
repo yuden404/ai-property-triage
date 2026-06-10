@@ -1,0 +1,9 @@
+Listing L001: Charming 3BR apartment in Florentin
+Type: apartment
+Location: Tel Aviv, Florentin
+Price: 3,850,000 ILS
+Rooms: 3
+Size: 85 sqm
+Condition score: 3/5
+Features: balcony, high ceilings, close to market, parking
+Description: Discover this charming 3-room apartment in the vibrant Florentin neighborhood, perfectly blending historic charm with modern living. Priced at 3,850,000 ILS, this 85 sqm property offers a great canvas for personalization with some updates. Enjoy the convenience of a private balcony and dedicated parking.

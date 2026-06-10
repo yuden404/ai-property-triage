@@ -1,0 +1,9 @@
+Listing L008: Cozy 3BR Apartment near University
+Type: apartment
+Location: Beer Sheva, Neve Noy
+Price: 1,850,000 ILS
+Rooms: 3
+Size: 90 sqm
+Condition score: 3/5
+Features: close to university, public transport access, storage room, renovated kitchen
+Description: This cozy 3-room, 90 sqm apartment in Beer Sheva's Neve Noy neighborhood is an excellent opportunity at 1,850,000 ILS. In good condition with a recently renovated kitchen, it's perfect for students or young families. Enjoy easy access to the university and public transport.
