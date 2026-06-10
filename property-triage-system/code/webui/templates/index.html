@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Property Triage — AI Real-Estate Listing Triage</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- ───────── Sidebar ───────── -->
+    <aside class="sidebar">
+      <div class="brand-hero">
+        <div class="brand-content">
+          <div class="brand-mark">PT</div>
+          <div class="brand-name">Property&nbsp;Triage</div>
+          <div class="brand-sub">AI real-estate listing triage</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="tab active" data-tab="assistant" data-title="Assistant"><span class="nav-ico">◆</span> Assistant</button>
+        <button class="tab" data-tab="submit" data-title="Submit Listing"><span class="nav-ico">＋</span> Submit Listing</button>
+        <button class="tab" data-tab="dashboard" data-title="Dashboard"><span class="nav-ico">▦</span> Dashboard</button>
+      </nav>
+
+      <div class="side-info">
+        <div class="info-card"><span class="dot d1"></span><p>Ask about the listings in the system, the market &amp; what to check.</p></div>
+        <div class="info-card"><span class="dot d2"></span><p>{% if mock %}Mock mode · sample data{% else %}Live · n8n{% endif %} · <code>{{ model }}</code></p></div>
+        <div class="info-card"><span class="dot d3"></span><p>English &amp; Hebrew supported · no invented data</p></div>
+      </div>
+
+      <div class="skyline" aria-hidden="true">
+        <svg viewBox="0 0 280 72" preserveAspectRatio="none">
+          <g class="stars" fill="#f3e6c8">
+            <circle cx="16"  cy="14" r="1"/>
+            <circle cx="34"  cy="7"  r="1.2"/>
+            <circle cx="52"  cy="18" r=".9"/>
+            <circle cx="72"  cy="9"  r="1.1"/>
+            <circle cx="84"  cy="28" r=".8"/>
+            <circle cx="106" cy="5"  r="1"/>
+            <circle cx="132" cy="14" r="1.2"/>
+            <circle cx="144" cy="6"  r=".9"/>
+            <circle cx="170" cy="11" r="1.1"/>
+            <circle cx="194" cy="22" r=".9"/>
+            <circle cx="206" cy="7"  r="1.2"/>
+            <circle cx="230" cy="16" r="1"/>
+            <circle cx="252" cy="26" r=".9"/>
+            <circle cx="266" cy="9"  r="1.1"/>
+            <line class="shooting-star" x1="20" y1="6" x2="31" y2="9" stroke="#f3e6c8" stroke-width="1.2" stroke-linecap="round"/>
+          </g>
+          <g fill="#0d0b08">
+            <rect x="6"  y="40" width="26" height="32"/>
+            <rect x="38" y="26" width="22" height="46"/>
+            <rect x="66" y="48" width="20" height="24"/>
+            <rect x="92" y="16" width="26" height="56"/>
+            <rect x="124" y="34" width="22" height="38"/>
+            <rect x="152" y="22" width="28" height="50"/>
+            <rect x="186" y="44" width="20" height="28"/>
+            <rect x="212" y="30" width="24" height="42"/>
+            <rect x="242" y="46" width="22" height="26"/>
+          </g>
+          <g class="windows" fill="#f3e6c8">
+            <rect x="44" y="32" width="3" height="4"/><rect x="51" y="32" width="3" height="4" class="tw"/>
+            <rect x="44" y="40" width="3" height="4" class="tw"/><rect x="51" y="40" width="3" height="4"/>
+            <rect x="98" y="22" width="3" height="4" class="tw"/><rect x="106" y="22" width="3" height="4"/>
+            <rect x="98" y="30" width="3" height="4"/><rect x="106" y="30" width="3" height="4" class="tw"/>
+            <rect x="98" y="38" width="3" height="4" class="tw"/><rect x="106" y="38" width="3" height="4"/>
+            <rect x="158" y="28" width="3" height="4"/><rect x="166" y="28" width="3" height="4" class="tw"/>
+            <rect x="158" y="36" width="3" height="4" class="tw"/><rect x="166" y="36" width="3" height="4"/>
+            <rect x="218" y="36" width="3" height="4" class="tw"/><rect x="226" y="36" width="3" height="4"/>
+          </g>
+        </svg>
+      </div>
+    </aside>
+
+    <!-- ───────── Main ───────── -->
+    <main class="main">
+      <header class="topbar">
+        <h1 id="page-title">Assistant</h1>
+        <div class="theme-switch">
+          <button id="theme-btn" class="theme-btn">🎨 Palette</button>
+          <div id="theme-menu" class="theme-menu hidden">
+            <div class="theme-menu-label">Choose a palette</div>
+            <button class="theme-opt" data-theme=""><span class="sw" style="background:linear-gradient(135deg,#382f25 0 45%,#936a35 0 72%,#efe8dc 0)"></span><span class="opt-name">Espresso</span><span class="check">✓</span></button>
+            <button class="theme-opt" data-theme="charcoal"><span class="sw" style="background:linear-gradient(135deg,#2b303a 0 45%,#44607f 0 72%,#eceef4 0)"></span><span class="opt-name">Charcoal</span><span class="check">✓</span></button>
+            <button class="theme-opt" data-theme="forest"><span class="sw" style="background:linear-gradient(135deg,#23463a 0 45%,#3f6b48 0 72%,#e9f1e7 0)"></span><span class="opt-name">Forest</span><span class="check">✓</span></button>
+            <button class="theme-opt" data-theme="navy"><span class="sw" style="background:linear-gradient(135deg,#1c2c4a 0 45%,#2f4f86 0 72%,#e8eef7 0)"></span><span class="opt-name">Navy</span><span class="check">✓</span></button>
+            <button class="theme-opt" data-theme="plum"><span class="sw" style="background:linear-gradient(135deg,#382b3d 0 45%,#7d4f6a 0 72%,#f6ebf1 0)"></span><span class="opt-name">Plum</span><span class="check">✓</span></button>
+          </div>
+        </div>
+      </header>
+
+      <div class="content">
+
+        <!-- Assistant -->
+        <section id="tab-assistant" class="panel active">
+          <p class="panel-intro">Ask about the listings in the system, the buying/renting process, and what to check in a property. It won't invent prices, links, or legal advice.</p>
+          <div id="chat-window" class="chat-window"></div>
+          <div id="suggestions" class="suggestions"></div>
+          <form id="chat-form" class="chat-input">
+            <input id="chat-text" type="text" autocomplete="off" placeholder="Ask about the property market…">
+            <button type="submit" class="btn btn-accent" id="chat-send">Send</button>
+          </form>
+        </section>
+
+        <!-- Submit -->
+        <section id="tab-submit" class="panel">
+          <div class="card">
+            <h2 class="card-title">Submit a property listing</h2>
+            <p class="panel-intro">Per the spec: description, property images, and listing agent name.</p>
+            <form id="submit-form">
+              <label class="field-label" for="desc">Property description <span class="req">*</span></label>
+              <textarea id="desc" rows="4" placeholder="e.g. Bright 3-bedroom apartment in Ramat Gan, 95 sqm, balcony, parking, quiet street…"></textarea>
+              <label class="field-label">Property images</label>
+              <div id="dropzone" class="dropzone">
+                <div class="dz-inner">
+                  <span class="dz-icon">⬚</span>
+                  <span class="dz-text">Drag &amp; drop images here, or <span class="dz-link">browse</span></span>
+                  <span class="dz-hint">JPG / PNG / WEBP</span>
+                </div>
+                <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+              </div>
+              <div id="previews" class="previews"></div>
+              <label class="field-label" for="agent">Listing agent name</label>
+              <input id="agent" type="text" placeholder="e.g. Dana Levi">
+              <button type="submit" class="btn btn-dark" id="submit-btn">Submit listing</button>
+            </form>
+          </div>
+          <div id="result" class="result"></div>
+        </section>
+
+        <!-- Dashboard -->
+        <section id="tab-dashboard" class="panel">
+          <div id="dash-note" class="dash-note"></div>
+          <div class="metrics" id="metrics"></div>
+          <div class="charts">
+            <div class="card chart-card"><h3 class="chart-title">Listings by team</h3><canvas id="chart-routing"></canvas></div>
+            <div class="card chart-card"><h3 class="chart-title">Execution time (ms)</h3><canvas id="chart-exec"></canvas></div>
+            <div class="card chart-card"><h3 class="chart-title">Condition score per listing</h3><canvas id="chart-cond"></canvas></div>
+            <div class="card chart-card"><h3 class="chart-title">Outcomes</h3><canvas id="chart-outcomes"></canvas></div>
+          </div>
+          <div class="card"><h3 class="chart-title">Recent listings</h3><div id="recent-table" class="table-wrap"></div></div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

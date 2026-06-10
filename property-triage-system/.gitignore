@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets & local config
+.env
+*.pem
+*_accessKeys.csv
+
+# WebUI runtime
+code/webui/events.jsonl
+code/webui/listings.jsonl
+
+# Data & models (large; not committed)
+data/
+*.pth
+
+# OS
+.DS_Store

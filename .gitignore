@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets & local config (never commit)
+.env
+*.pem
+*_accessKeys.csv
+
+# Runtime data (regenerated locally)
+property-triage-system/code/webui/events.jsonl
+property-triage-system/code/webui/listings.jsonl
+
+# Large artifacts
+*.pth
+data/

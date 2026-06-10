@@ -1,0 +1,25 @@
+{
+  "status": "ok",
+  "routing": "residential",
+  "brief_markdown": "## 3-Bedroom Apartment in Ramat Gan\n\n**Price:** 2,450,000 ILS · **Size:** 95 sqm · **Floor:** 2 of 4\n\nBright, well-maintained 3-bedroom apartment on a quiet residential street near Bialik Park, an 8-minute walk to the light rail. The home offers a balcony and a dedicated parking spot. The kitchen is in good condition; the bathrooms are original and present a light renovation opportunity.\n\n**Key features:** balcony, parking, near light rail, quiet street.\n\n_Generated from the submitted description and verified against comparable listings._",
+  "extracted": {
+    "property_type": "apartment",
+    "location": "Ramat Gan",
+    "price": "2,450,000 ILS",
+    "num_rooms": 3,
+    "key_features": ["balcony", "parking", "near light rail", "quiet street"],
+    "certifications": []
+  },
+  "images": [
+    {"image_url": "https://example.com/kitchen.jpg", "room_type": "kitchen", "condition_score": 4, "confidence": 0.91},
+    {"image_url": "https://example.com/bathroom.jpg", "room_type": "bathroom", "condition_score": 3, "confidence": 0.78},
+    {"image_url": "https://example.com/living.jpg", "room_type": "living room", "condition_score": 4, "confidence": 0.88}
+  ],
+  "similar_listings": [
+    {"id": "L007", "text": "3BR semi-detached, Ramat Gan, 95 sqm, needs kitchen renovation", "score": 0.87},
+    {"id": "L012", "text": "3BR apartment, Givatayim, 90 sqm, renovated, balcony", "score": 0.81},
+    {"id": "L019", "text": "4BR apartment, Ramat Gan, 110 sqm, parking, near park", "score": 0.76}
+  ],
+  "guardrail": {"input_pass": true, "output_pass": true},
+  "exec_ms": 4200
+}
