@@ -286,7 +286,7 @@ function renderResult(d) {
       ${d.brief_markdown ? `<div class="brief">${mdLite(d.brief_markdown)}</div>` : ""}
       ${imgs ? `<h3 class="chart-title" style="margin-top:18px">Image analysis</h3>${imgs}` : ""}
       ${sims ? `<h3 class="chart-title" style="margin-top:18px">Similar listings</h3>${sims}` : ""}
-      <p class="panel-intro" style="margin-top:14px">Guardrails — input: ${guard.input_pass} · output: ${guard.output_pass} · exec: ${d.exec_ms ?? "?"} ms</p>
+      <p class="panel-intro" style="margin-top:14px">Guardrails — input: ${passFmt(guard.input_pass)} · output: ${passFmt(guard.output_pass)} · exec: ${d.exec_ms ?? "?"} ms</p>
     </div>`;
 }
 

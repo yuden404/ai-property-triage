@@ -40,7 +40,7 @@ def test_submit_accepted_saves_and_has_real_exec_ms(web, monkeypatch):
     assert d["status"] == "ok"
     assert d.get("brief_markdown")
     assert "brief_html" not in d            # severe #1: no server-rendered HTML
-    assert isinstance(d["exec_ms"], int)    # M2: measured time injected (not the canned 4200)
+    assert isinstance(d["exec_ms"], int) and d["exec_ms"] != 4200  # M2: measured, not the canned value
     assert len(saved) == 1 and len(logged) == 1
 
 
@@ -56,12 +56,33 @@ def test_submit_rejected_is_logged_but_not_saved(web, monkeypatch):
 
 
 def test_chat_streams_ollama(web, monkeypatch):
-    monkeypatch.setattr(web.module, "open_ollama_stream", lambda messages: "RESP")
-    monkeypatch.setattr(web.module, "iter_ollama_chunks", lambda resp: iter(["Hello", " world"]))
+    # Mock only the HTTP boundary so the real open→iter path runs (covers the
+    # connect-before-stream ordering rather than stubbing it away).
+    class FakeResp:
+        def raise_for_status(self): pass
+        def iter_lines(self):
+            yield b'{"message":{"content":"Hello"}}'
+            yield b'{"message":{"content":" world"},"done":true}'
+    monkeypatch.setattr(web.module.requests, "post", lambda *a, **k: FakeResp())
     monkeypatch.setattr(web.module, "listings_context", lambda *a, **k: "")
     r = web.client.post("/api/chat", json={"history": [{"role": "user", "content": "hi"}]})
     assert r.status_code == 200
     assert r.data == b"Hello world"
+
+
+def test_chat_midstream_failure_is_graceful(web, monkeypatch):
+    # Ollama drops AFTER connect succeeds — the stream must end with a notice,
+    # not abort unhandled (review #2).
+    class FakeResp:
+        def raise_for_status(self): pass
+        def iter_lines(self):
+            yield b'{"message":{"content":"partial"}}'
+            raise requests.exceptions.ChunkedEncodingError("dropped")
+    monkeypatch.setattr(web.module.requests, "post", lambda *a, **k: FakeResp())
+    monkeypatch.setattr(web.module, "listings_context", lambda *a, **k: "")
+    r = web.client.post("/api/chat", json={"history": [{"role": "user", "content": "hi"}]})
+    assert r.status_code == 200
+    assert b"partial" in r.data and b"interrupted" in r.data
 
 
 def test_chat_ollama_down_returns_502(web, monkeypatch):
@@ -89,12 +110,13 @@ def test_listings_context_formatting(web, monkeypatch):
     assert "Listing 1" in ctx and "bright flat" in ctx
 
 
-def test_read_jsonl_cached_invalidates_on_change(web, tmp_path):
+def test_read_jsonl_cached_copies_and_invalidates(web, tmp_path):
     s = web.module
     p = tmp_path / "x.jsonl"
     p.write_text('{"a": 1}\n', encoding="utf-8")
     cache = {"sig": None, "data": []}
     assert s._read_jsonl_cached(p, cache) == [{"a": 1}]
-    assert s._read_jsonl_cached(p, cache) is cache["data"]   # unchanged → served from cache
+    s._read_jsonl_cached(p, cache).append({"x": 9})          # mutate the result…
+    assert s._read_jsonl_cached(p, cache) == [{"a": 1}]       # …cache stays intact (copy returned)
     p.write_text('{"a": 1}\n{"b": 2}\n', encoding="utf-8")
     assert s._read_jsonl_cached(p, cache) == [{"a": 1}, {"b": 2}]  # changed → re-read

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from collections import Counter
 from datetime import datetime
@@ -62,27 +63,30 @@ def _read_jsonl(path: Path) -> list[dict]:
     return out
 
 
-# The listings file is read on every chat turn (it becomes the grounding context).
-# Cache it and re-read only when the file actually changes (mtime or size) — a long
-# conversation no longer hits the disk on every message, and a new submission
-# (which appends to the file) refreshes the cache automatically.
+# The listings/events files are read on hot paths (every chat turn / dashboard
+# poll). Cache them and re-read only when the file changes (mtime or size) — a
+# new submission appends → the cache refreshes itself. Guarded by a lock because
+# Werkzeug serves requests on multiple threads.
+_cache_lock = threading.Lock()
 _listings_cache: dict = {"sig": None, "data": []}
+_events_cache: dict = {"sig": None, "data": []}
 
 
 def _read_jsonl_cached(path: Path, cache: dict) -> list[dict]:
     try:
         st = path.stat()
         sig = (st.st_mtime_ns, st.st_size)
-    except FileNotFoundError:
+    except OSError:  # missing / unreadable → treat as empty, don't 500 the caller
         sig = None
-    if cache["sig"] != sig:
-        cache["sig"] = sig
-        cache["data"] = _read_jsonl(path)
-    return cache["data"]
+    with _cache_lock:
+        if cache["sig"] != sig:
+            cache["sig"] = sig
+            cache["data"] = _read_jsonl(path)
+        return list(cache["data"])  # copy: a caller can't mutate the shared cache
 
 
 def load_events() -> tuple[list[dict], bool]:
-    real = _read_jsonl(EVENTS_LOG)
+    real = _read_jsonl_cached(EVENTS_LOG, _events_cache)
     return (real, False) if real else (_read_jsonl(SAMPLE_EVENTS), True)
 
 
@@ -121,7 +125,7 @@ def save_listing(agent: str, description: str, images: list[str], result: dict) 
         fh.write(json.dumps(rec) + "\n")
 
 
-def log_event(agent: str, result: dict, elapsed_ms: int) -> None:
+def log_event(agent: str, result: dict) -> None:
     imgs = result.get("images", []) or []
     conds = [i.get("condition_score") for i in imgs if isinstance(i.get("condition_score"), (int, float))]
     guard = result.get("guardrail", {}) or {}
@@ -136,7 +140,7 @@ def log_event(agent: str, result: dict, elapsed_ms: int) -> None:
         "avg_condition": round(sum(conds) / len(conds), 2) if conds else None,
         "input_pass": guard.get("input_pass"),
         "output_pass": guard.get("output_pass"),
-        "exec_ms": result.get("exec_ms", elapsed_ms),
+        "exec_ms": result.get("exec_ms"),
     }
     with EVENTS_LOG.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(event) + "\n")
@@ -181,15 +185,20 @@ def open_ollama_stream(messages: list[dict]):
 
 
 def iter_ollama_chunks(resp):
-    for line in resp.iter_lines():
-        if not line:
-            continue
-        data = json.loads(line)
-        chunk = data.get("message", {}).get("content", "")
-        if chunk:
-            yield chunk
-        if data.get("done"):
-            break
+    try:
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            data = json.loads(line)
+            chunk = data.get("message", {}).get("content", "")
+            if chunk:
+                yield chunk
+            if data.get("done"):
+                break
+    except (requests.exceptions.RequestException, json.JSONDecodeError):
+        # Connection dropped or a malformed line mid-reply — end gracefully with a
+        # short notice instead of aborting the chunked response unhandled.
+        yield "\n\n⚠️ The reply was interrupted — please try again."
 
 
 # --------------------------------------------------------------------------- #
@@ -201,7 +210,6 @@ def submit_listing(payload: dict) -> tuple[dict, int]:
         result = json.loads(MOCK_BRIEF.read_text(encoding="utf-8"))
         if payload.get("description"):
             result.setdefault("extracted", {})["submitted_description"] = payload["description"]
-        time.sleep(0.4)
     else:
         resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=120)
         resp.raise_for_status()
@@ -248,12 +256,12 @@ def api_submit():
     images = body.get("images") or []
     payload = {"description": description, "images": images, "agent_name": agent_name}
     try:
-        result, elapsed_ms = submit_listing(payload)
+        result, _ = submit_listing(payload)
     except requests.exceptions.RequestException as exc:
         return jsonify({"error": f"Couldn't reach the n8n webhook: {exc}"}), 502
     # Log every event (incl. rejected) for the dashboard, but only feed ACCEPTED
     # listings into the chat's grounding store — never persist rejected/spam input.
-    log_event(agent_name, result, elapsed_ms)
+    log_event(agent_name, result)
     if result.get("status") != "rejected":
         save_listing(agent_name, description, images, result)
     # brief_markdown is rendered safely client-side (mdLite escapes HTML) — no raw

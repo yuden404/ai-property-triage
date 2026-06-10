@@ -2,11 +2,11 @@
 
 POST /check/input   { "text": "<submission>" }
 POST /check/output  { "text": "<generated report>", "source": "<facts (optional)>" }
-                 →  { "pass": bool, "reason": "<if fail>", "safe_text": "<masked text>" }
+                 →  { "pass": bool, "reason": "<if fail>", "safe_text": "<the text>" }
 
 Two layers per check:
   1. Amazon Bedrock Guardrails (ApplyGuardrail) — managed safety: hate/violence/
-     sexual/insults, prompt attacks, profanity, denied topics, PII masking.
+     sexual/insults, prompt attacks, profanity, denied topics.
   2. A Gemini rail — the parts a denylist cannot express: input allow-list
      ("genuine property listing in he/en") and output factuality-vs-source.
 
@@ -46,12 +46,6 @@ REJECT_MESSAGES = {  # multilingual extension: polite, localized rejection
                    "property: type, location, size, rooms, price and key features.",
 }
 
-# Cheap pre-filter: the second (OUTPUT-source) Bedrock call exists only to mask
-# PII. Skip it unless the text actually looks like it contains an email, or a
-# phone/card-length digit run — no such pattern ⇒ nothing to anonymize. Card
-# numbers (BLOCK-level) are long digit runs, so they still trip this and get caught.
-_PII_HINT = re.compile(r"[\w.+-]+@[\w-]+\.\w+|\+?\d[\d\s().\-]{7,}\d")
-
 app = FastAPI(title="Property Triage — Guardrails Service")
 _runtime = client("bedrock-runtime")
 
@@ -67,37 +61,23 @@ def _parse_json(raw: str) -> dict:
 
 
 def _apply_guardrail(text: str, source: str) -> dict:
-    """Run Bedrock ApplyGuardrail. Returns {blocked, reasons, masked_text}."""
+    """Run Bedrock ApplyGuardrail. Returns {blocked, reasons}."""
     resp = _runtime.apply_guardrail(
         guardrailIdentifier=GUARDRAIL_ID,
         guardrailVersion=GUARDRAIL_VERSION,
         source=source,
         content=[{"text": {"text": text}}],
     )
-    reasons, anonymized_only = [], True
+    reasons = []
     for a in resp.get("assessments", []):
         for f in a.get("contentPolicy", {}).get("filters", []):
             reasons.append(f"content:{f['type'].lower()}")
-            anonymized_only = False
         for t in a.get("topicPolicy", {}).get("topics", []):
             reasons.append(f"topic:{t['name']}")
-            anonymized_only = False
         for w in a.get("wordPolicy", {}).get("managedWordLists", []):
             reasons.append(f"word:{w['type'].lower()}")
-            anonymized_only = False
-        for p in a.get("sensitiveInformationPolicy", {}).get("piiEntities", []):
-            reasons.append(f"pii:{p['type'].lower()}:{p['action'].lower()}")
-            if p["action"] != "ANONYMIZED":
-                anonymized_only = False
-    intervened = resp.get("action") == "GUARDRAIL_INTERVENED"
-    masked = ""
-    if intervened and resp.get("outputs"):
-        masked = resp["outputs"][0].get("text", "")
-    return {
-        "blocked": intervened and not anonymized_only,
-        "reasons": reasons,
-        "masked_text": masked if (intervened and anonymized_only) else "",
-    }
+    # Any intervention blocks — fail closed even on a policy we don't enumerate above.
+    return {"blocked": resp.get("action") == "GUARDRAIL_INTERVENED", "reasons": reasons}
 
 
 @app.get("/health")
@@ -116,15 +96,6 @@ def check_input(req: CheckRequest):
     if gr["blocked"]:
         return {"pass": False, "reason": "; ".join(gr["reasons"]) or "safety policy", "safe_text": ""}
 
-    # PII masking quirk: Bedrock only ANONYMIZEs with source=OUTPUT, so run a
-    # second pass purely to harvest the masked text (and catch BLOCK-level PII).
-    # Only pay for that call when the text actually looks like it carries PII.
-    if _PII_HINT.search(text):
-        mask = _apply_guardrail(text, "OUTPUT")
-        if mask["blocked"]:
-            return {"pass": False, "reason": "; ".join(mask["reasons"]) or "safety policy", "safe_text": ""}
-        gr["masked_text"] = mask["masked_text"] or gr["masked_text"]
-
     # Layer 2 — allow-list classifier (Gemini): genuine listing in he/en
     try:
         verdict = _parse_json(generate(INPUT_CLASSIFIER_PROMPT.format(text=text), temperature=0.0))
@@ -138,7 +109,7 @@ def check_input(req: CheckRequest):
                 "reason": f"{REJECT_MESSAGES['not_listing']} ({verdict.get('reason', '')})",
                 "safe_text": ""}
 
-    return {"pass": True, "reason": "", "safe_text": gr["masked_text"] or text}
+    return {"pass": True, "reason": "", "safe_text": text}
 
 
 @app.post("/check/output")
@@ -147,11 +118,11 @@ def check_output(req: CheckRequest):
     if not text:
         return {"pass": False, "reason": "empty report", "safe_text": ""}
 
-    # Layer 1 — managed safety + PII masking on the generated report
+    # Layer 1 — managed safety on the generated report
     gr = _apply_guardrail(text, "OUTPUT")
     if gr["blocked"]:
         return {"pass": False, "reason": "; ".join(gr["reasons"]) or "safety policy", "safe_text": ""}
-    safe_text = gr["masked_text"] or text
+    safe_text = text
 
     # Layer 2 — factuality vs source (primary gate; Bedrock grounding is secondary)
     source = (req.source or "").strip()
