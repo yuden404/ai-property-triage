@@ -1,19 +1,19 @@
 # Project Plan & Progress — AI-Powered Real Estate Property Triage System
 
 **Owner:** Yehuda Rokach · **Type:** Individual final project · **Due:** ~2.5 weeks from 2026-06-06
-**Status:** WebUI being **rebuilt** (Streamlit → HTML/CSS/JS + Flask, instructor permits) · then Phase 2 · **Last updated:** 2026-06-09
+**Status:** Phases 0–3 done — WebUI (Flask) + RAG + Guardrails + LangGraph Agent + Image Analyser all built, tested (43 pytest, offline), and pushed; 2 code-review rounds applied. **Next:** n8n (Phase 4). **Last updated:** 2026-06-11
 
 This is the **living** project doc: it tracks decisions and progress as we build. The formal report lives in [`PROJECT_BOOK.pdf`](PROJECT_BOOK.pdf); the code lives in [`property-triage-system/`](property-triage-system/).
 
 ---
 
 ## Progress tracker
-- [x] **Phase 0 — Scaffold**: folder structure ✓ · venv + deps ✓ · living docs ✓ (`PROJECT_PLAN.md`, `PROJECT_BOOK.md`+PDF, `prompt_log.md`) · Ollama ✓ (`llama3.1`)
-- [x] **Phase 1 — Full UI layer** ✓ — 3-tab Streamlit, validated (AppTest, no exceptions): **Assistant** (Ollama `llama3.1`) answers about the entered listings + general help; **Submit** with drag-&-drop image upload (MOCK mode); **Dashboard** with charts + rich table. Prompt Surface #5 iterated to **V6** (10/10); themed UI, Deploy button hidden. → **now being rebuilt as HTML/CSS/JS + Flask** (instructor permits; same features, all Python logic reused).
-- [~] **Phase 2 — Bedrock setup + microservices** — ✅ AWS profile (`course`) · ✅ Gemini key in Secrets Manager · ✅ 24 synthetic listings (Gemini) → S3 · ✅ **Bedrock KB live on S3 Vectors** (`KB_ID=3KTFERDLUV`, ingestion 24/24, retrieval verified) · ✅ **RAG service** (FastAPI :8001, `/query` per spec schema, Gemini insight with citations — Surface #3 V1 = 10/10, 0 fabricated ids) · ✅ **Guardrails service** (Bedrock Guardrail `huksxm9z68f6` + Gemini rails, :8003, 11/11 cases, 0% FP, PII-masking quirk fixed — Bedrock service #2 ✓) · ⬜ LangGraph agent · ⬜ Image stub
-- [ ] **Phase 3 — Image Analyser training** ⟨after the class lesson, ~2026-06-09⟩
-- [ ] **Phase 4 — n8n flow** (8 nodes) + wire the WebUI to the real webhook
-- [ ] **Phase 5 — Excellent polish** (prompt logs to V5, output-guardrail review path, docs)
+- [x] **Phase 0 — Scaffold** ✓ — folders · venv + deps · living docs · Ollama (`llama3.1`)
+- [x] **Phase 1 — WebUI** ✓ — rebuilt as **HTML/CSS/JS + Flask** (3 tabs: Assistant / Submit / Dashboard); streaming Ollama chat (listings-aware), drag-&-drop upload, Chart.js dashboard. Prompt Surface #5 V1→V6 (10/10).
+- [x] **Phase 2 — Bedrock + microservices** ✓ — AWS profile `course` · Gemini key in Secrets Manager · **Bedrock KB** on S3 Vectors (`KB_ID=3KTFERDLUV`, 24/24) · **RAG** (:8001, Surface #3 10/10) · **Guardrails** (Bedrock Guardrail `huksxm9z68f6` + Gemini rails, :8003, Surface #4; **PII masking removed** — no email/phone fields) · **LangGraph Agent** (:8000, planner→tool_executor→synthesiser, Gemini, Surface #2 tool descriptions). All 4 services have Dockerfiles. **pytest suite: 43 tests, mocked/offline.** **2 code-review rounds applied** (XSS, error handling, fail-closed guardrail, cache safety, …).
+- [x] **Phase 3 — Image Analyser** ✓ — EfficientNet-B0 fine-tune (`train.py`); data via `prepare_data.py` (kagglehub, 500/class, 7 classes). **Rooms-only argmax 84.6% (>75% ✓)**; 7-class val 84.4%. Added a **`not_a_room` reject class** for OOD robustness. Service :8002 loads `model.pth`. See [`docs/model_card.md`](property-triage-system/docs/model_card.md). ⬜ condition-score head (placeholder for now).
+- [ ] **Phase 4 — n8n flow** (8 nodes) + wire the WebUI to the real webhook ← **NEXT**
+- [ ] **Phase 5 — Excellent polish** (prompt logs to V5, output-guardrail review path; `architecture.md` ✓)
 - [ ] **Phase 6 — Demo video + ZIP package** + finalize `PROJECT_BOOK.pdf`
 
 ## Decisions log
@@ -33,16 +33,20 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | 2026-06-10 | **Pushed to GitHub: `yuden404/ai-property-triage`** (public, personal account) | Remote URL pins the `yuden404` user; work gh account stays the active one |
 | 2026-06-10 | **AWS = Yehuda's personal account `928974129332`**, IAM user `course-user`, profile `course`, `us-east-1` | There is no separate course account; costs are on Yehuda → keep them near zero |
 | 2026-06-10 | **KB vector store = S3 Vectors** (not OpenSearch Serverless) | OpenSearch idles at ~$5–6/day on a personal account; S3 Vectors costs cents and is available in the account (verified via boto3) |
+| 2026-06-11 | **Removed PII masking from Guardrails** | No email/phone fields exist in the system → scope creep; also let `_apply_guardrail` fail **closed** on any intervention |
+| 2026-06-11 | **Image: added a `not_a_room` reject class** (7th, via `prasunroy/natural-images`) | Forces an explicit "not a property photo" output instead of overconfident room guesses; fixed OOD (dog/cat/doc → `not_a_room`) |
+| 2026-06-11 | **Offline pytest suite (43 tests, all mocked)** | Re-runnable verification of every service + WebUI; needs no creds/network |
+| 2026-06-11 | **Image data via `kagglehub` + `prepare_data.py`** (500/class) | One-time local download; combines robinreni (rooms) + mikhailma street_data (exterior) + natural-images (not_a_room); Kaggle key stays local (not in AWS — nothing on EC2 reads it) |
 
 ## Rubric self-assessment (filled at the final code review)
-| Criterion | Weight | Target | Actual (final) |
+| Criterion | Weight | Target | Actual (in progress) |
 |---|---|---|---|
-| n8n Flow | 20% | Excellent | — |
-| EC2 Services | 25% | Excellent | — |
-| Image Analyser | 10% | Excellent (>75%) | — |
-| Guardrails | 10% | Excellent (<5% FP) | — |
-| Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | — |
-| WebUI + Ollama | 10% | Excellent | — |
+| n8n Flow | 20% | Excellent | — (Phase 4) |
+| EC2 Services | 25% | Excellent | 3/4 built + tested (RAG, Guardrails, Agent); Image trained · **EC2 deploy pending** |
+| Image Analyser | 10% | Excellent (>75%) | **84.6%** rooms-only on fresh images ✓ |
+| Guardrails | 10% | Excellent (<5% FP) | Built (Surface #4 was 11/11); fail-closed |
+| Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | Surfaces #3/#4/#5 done; #1/#2 in Phase 4 |
+| WebUI + Ollama | 10% | Excellent | Built (Flask, 3 tabs) ✓ |
 
 ---
 
@@ -52,7 +56,7 @@ Individual final project for the AI Engineering course. The guideline (`AI_Prope
 We reuse two things the student already built: `python_course/rag_app_aws/` (Bedrock KB + S3 + EC2 RAG app) and `document_analyst/` (n8n + Gemini + Gemini Vision, with a 5-iteration `prompt_log.md`).
 
 ## AWS Bedrock services used (exactly 2)
-1. **Amazon Bedrock Knowledge Bases** — RAG for Service 1 (`Retrieve` + `StartIngestionJob`; Titan V2 embeddings + OpenSearch Serverless, managed).
+1. **Amazon Bedrock Knowledge Bases** — RAG for Service 1 (`Retrieve` + `StartIngestionJob`; Titan V2 embeddings on **S3 Vectors**, managed).
 2. **Amazon Bedrock Guardrails** — safety for Service 3 (`CreateGuardrail` + `ApplyGuardrail`).
 
 > LLM generation is **Gemini** (key in AWS Secrets Manager), not Bedrock. This keeps the Bedrock footprint to the two managed services the requirement asks for.

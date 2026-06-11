@@ -1,0 +1,5 @@
+**/__pycache__
+**/*.pyc
+image_analyser/data
+*.env
+.env

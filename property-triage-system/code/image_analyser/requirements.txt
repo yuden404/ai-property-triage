@@ -1,0 +1,14 @@
+# Image Analyser — training + serving.
+# torch/torchvision are the heavy deps; on Apple Silicon they bring MPS support.
+torch>=2.2
+torchvision>=0.17
+
+# data prep (prepare_data.py downloads the Kaggle datasets)
+kagglehub>=0.3
+
+# serving (Service 2 FastAPI app, added next)
+fastapi>=0.115
+uvicorn>=0.30
+pillow>=10.0
+requests>=2.32
+python-dotenv>=1.0

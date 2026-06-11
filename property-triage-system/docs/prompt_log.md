@@ -1,6 +1,6 @@
 # Prompt Engineering Log
 
-This log documents the iteration process for the **five prompt-engineering surfaces** of the project. It is worth **25%** of the grade, so it is captured **live** — every time a prompt is tuned, the before/after and the re-run results are recorded here, not reconstructed at the end.
+This log documents the iteration process for the **six prompt-engineering surfaces** of the project. It is worth **25%** of the grade, so it is captured **live** — every time a prompt is tuned, the before/after and the re-run results are recorded here, not reconstructed at the end.
 
 **Format per surface:** a fixed set of **≥10 test cases** defined *before* version 1, then:
 - **V1 — Baseline:** first attempt, run on the test cases, record outputs.
@@ -12,11 +12,12 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 
 | # | Surface | Component | Status |
 |---|---------|-----------|--------|
-| 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ⬜ not started |
-| 2 | n8n AI Agent | agent system prompt + tool descriptions (Gemini) | ⬜ not started |
-| 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ⬜ not started |
-| 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ⬜ not started |
-| 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | 🟡 in progress (started with the WebUI) |
+| 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ⬜ Phase 4 |
+| 2 | n8n AI Agent | agent system prompt + tool descriptions (Gemini) | ⬜ Phase 4 |
+| 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ✅ V1 = 10/10 |
+| 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
+| 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V6 = 10/10 |
+| 6 | LangGraph Agent tool descriptions | Service 4 — planner tool-routing descriptions (Gemini) | 🟡 V1 baseline (iterate in Phase 4) |
 
 ---
 
@@ -194,3 +195,34 @@ Rules:
 
 ### V6 — Listings-aware (requirement change, 2026-06-09)
 The instructor clarified the assistant must also **answer questions about the listings entered into the system** (submit in one tab, ask about them in the chat). Changes: (a) submitted listings are persisted (`listings.jsonl`) and injected as grounding context into the chat (`build_messages` → `listings_context()`); (b) rule 1 was relaxed to **allow quoting facts present in the provided listings** (price, location, features, condition) while still forbidding invented data and URLs; (c) added a "listings" capability bullet + listings-oriented suggested questions. Verified on `llama3.1`: *"which listings need renovation?"* → cites Listing 3 (and Listing 1); *"price of the Tel Aviv office?"* → 4,200,000 ILS (Listing 2); a Hebrew query about Ramat Gan answered from the data; off-topic ("tell me a joke") still refused. **Phase 2 seam:** the context source switches from the local file to the **Bedrock Knowledge Base (RAG service)**.
+
+---
+
+## Surface 6 — LangGraph Agent tool descriptions (Gemini, Service 4)
+The planner node picks tools **from their text descriptions**, so their precision
+drives correct routing (guideline: iterate ≥5×, 10 benchmark queries). Prompt lives
+in `code/agent_service/prompts.py` (`TOOL_DESCRIPTIONS`).
+
+**Benchmark queries (define before V1):**
+
+| # | Query | Expected tool(s) |
+|---|-------|------------------|
+| 1 | "What are comparable homes in Ramat Gan worth?" | rag |
+| 2 | "Which rooms in the uploaded images need attention?" (+images) | image |
+| 3 | "What renovation brings this flat to top condition, and how does it compare?" (+images) | rag + image |
+| 4 | "Is the kitchen in good condition?" (+images) | image |
+| 5 | "How is a renovated 3-room Tel Aviv flat positioned vs the market?" | rag |
+| 6 | "Summarise this listing." (no images) | rag |
+| 7 | "What's the condition score of these photos?" (+images) | image |
+| 8 | "Are there similar listings near the light rail?" | rag |
+| 9 | "Describe the property and its comparables." (+images) | rag + image |
+| 10 | "Rate the bathroom and find similar bathrooms." (+images) | rag + image |
+
+### V1 — Baseline (2026-06-11)
+Tool descriptions written; planner forced to `use_image=false` when no images are
+provided. Live checks: a market/comparables query routed to **rag only** (correct);
+a "what condition is the kitchen" query with an image routed to **image** (correct).
+
+_V2+ : run the full 10-query benchmark and measure routing accuracy when wiring the
+agent into n8n (Phase 4); the n8n AI-Agent surface (#2) shares the same tool-routing
+concern. Final entry after those iterations._

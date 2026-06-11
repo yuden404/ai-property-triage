@@ -19,3 +19,7 @@ property-triage-system/code/webui/listings.jsonl
 # Large artifacts
 *.pth
 data/
+
+# Kaggle API credentials (never commit)
+kaggle.json
+**/kaggle.json
