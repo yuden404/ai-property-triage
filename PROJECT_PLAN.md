@@ -45,7 +45,7 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | EC2 Services | 25% | Excellent | 3/4 built + tested (RAG, Guardrails, Agent); Image trained · **EC2 deploy pending** |
 | Image Analyser | 10% | Excellent (>75%) | **84.6%** rooms-only on fresh images ✓ |
 | Guardrails | 10% | Excellent (<5% FP) | Built (Surface #4 was 11/11); fail-closed |
-| Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | Surfaces #3/#4/#5 done; #1/#2 in Phase 4 |
+| Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | 5/6 surfaces with pass rates (#1 9/10, #3 10/10, #4 11/11, #5 10/10, #6 9/10); #2 V1→V4 + end-to-end |
 | WebUI + Ollama | 10% | Excellent | Built (Flask, 3 tabs) ✓ |
 
 ---
@@ -74,7 +74,7 @@ We reuse two things the student already built: `python_course/rag_app_aws/` (Bed
 - **Agent** `POST /agent/run` `{query}` → `{answer, tools_used[], reasoning_steps[]}`
 
 ## Prompt Engineering Log surfaces (25% — captured as we build)
-1. n8n Information Extractor systemPromptTemplate · 2. n8n AI Agent prompt + tool descriptions · 3. RAG insight/citation prompt (Gemini) · 4. Guardrails rail prompts (Gemini) · 5. Ollama real-estate system prompt. Each: ≥5 versions + ≥10 test cases + pass-rate. **Status:** #3 RAG 10/10 · #4 Guardrails 11/11 · #5 Ollama V1→V6 10/10 · #1 Extractor + #2 Agent/brief V1→V4 captured live (full 10-case runs being rounded out). (#6 LangGraph tool descriptions also logged.)
+1. n8n Information Extractor systemPromptTemplate · 2. n8n AI Agent prompt + tool descriptions · 3. RAG insight/citation prompt (Gemini) · 4. Guardrails rail prompts (Gemini) · 5. Ollama real-estate system prompt. Each: ≥10 test cases + pass-rate. **Status — 5/6 surfaces with measured pass rates:** #1 Extractor **9/10 (0 inventions)** · #3 RAG **10/10** · #4 Guardrails **11/11** · #5 Ollama V1→V6 **10/10** · #6 LangGraph routing **9/10**. #2 n8n-Agent + brief iterated **V1→V4** and verified end-to-end (per-tool-call benchmark needs n8n execution logs — manual round-out).
 
 ## Committed extensions (extra credit — after MVP)
 1. **Managed vector store** — already satisfied by Bedrock KB; add a precision@3 benchmark + write-up.

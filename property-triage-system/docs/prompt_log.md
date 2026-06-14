@@ -12,12 +12,12 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 
 | # | Surface | Component | Status |
 |---|---------|-----------|--------|
-| 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ✅ V1 (live, no invention) |
+| 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ✅ V1 = 9/10, **0 inventions** |
 | 2 | n8n AI Agent | agent system prompt + tool descriptions + brief (Gemini) | ✅ V1 agent + brief V1→V4 |
 | 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ✅ V1 = 10/10 |
 | 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
 | 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V6 = 10/10 |
-| 6 | LangGraph Agent tool descriptions | Service 4 — planner tool-routing descriptions (Gemini) | 🟡 V1 baseline (iterate in Phase 4) |
+| 6 | LangGraph Agent tool descriptions | Service 4 — planner tool-routing descriptions (Gemini) | ✅ V1 = 9/10 routing |
 
 ---
 
@@ -38,7 +38,17 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 
 **Results:** on the live pipeline runs the residential and commercial listings extracted cleanly (correct type / location / price / rooms / features; `certifications` empty when absent) with **no invented fields** — vague phrasing yields empty fields rather than guesses.
 
-_V2+ : run the full 10-case set and normalise price to a number during n8n hardening._
+### V1 benchmark — 10 cases (2026-06-14)
+Ran all 10 listings through the extraction prompt (via Gemini) and checked two
+things per case: stated fields captured, and **absent fields left empty (no
+invention)**. **Pass rate: 9/10 — and 0 inventions across all 10.** The vague
+("nice place"), no-price (warehouse), and single-word ("apartment") cases all
+returned empty fields rather than guesses — the anti-hallucination goal held.
+
+The one miss (#8): a stated "building permit #4471" was not pulled into
+`certifications` (under-extraction, not invention). **V2 fix:** broaden the
+`certifications` attribute description to explicitly include permits / occupancy
+certificates. (Also planned: normalise `price` to a number.)
 
 ---
 
@@ -242,9 +252,16 @@ in `code/agent_service/prompts.py` (`TOOL_DESCRIPTIONS`).
 
 ### V1 — Baseline (2026-06-11)
 Tool descriptions written; planner forced to `use_image=false` when no images are
-provided. Live checks: a market/comparables query routed to **rag only** (correct);
-a "what condition is the kitchen" query with an image routed to **image** (correct).
+provided.
 
-_V2+ : run the full 10-query benchmark and measure routing accuracy when wiring the
-agent into n8n (Phase 4); the n8n AI-Agent surface (#2) shares the same tool-routing
-concern. Final entry after those iterations._
+### V1 benchmark — 10 queries (2026-06-14)
+Ran all 10 benchmark queries against the live `/agent/run` (image cases served a
+real photo from a local file server) and checked `tools_used` against the expected
+tool set. **Pass rate: 9/10.**
+
+The one miss (#9 "Describe the property and its comparables." + image): the planner
+chose **rag only** and skipped the image — borderline, since a "describe + compare"
+phrasing reads as text-first. A V2 could bias the planner to always analyse a
+provided image; left as-is for now (forcing image on every image-present query
+risks over-calling). The rag-only and image-only cases were all correct, and the
+`use_image=false`-without-images guard held on every text query.
