@@ -32,7 +32,7 @@ This project designs and builds a production-style, multi-modal AI system that a
 
 The system is assembled from managed and reusable building blocks rather than hand-rolled from scratch: **Amazon Bedrock Knowledge Bases** for retrieval, **Amazon Bedrock Guardrails** for safety, **Google Gemini** for all LLM generation, a **PyTorch** transfer-learning model for image analysis, **n8n** for orchestration, and a **Flask + Ollama** web interface.
 
-As of this revision, the WebUI, all four microservices (RAG, Image Analyser, Guardrails, LangGraph Agent) — covered by a 43-test offline suite — and the **n8n 8-node orchestration flow** are built and validated; the image classifier reaches **84.6%** room-type accuracy on fresh images, and the full pipeline passes both guardrails with correct residential/commercial routing. Wiring the WebUI to the live webhook and EC2 deployment remain.
+As of this revision, the WebUI, all four microservices (RAG, Image Analyser, Guardrails, LangGraph Agent) — covered by a 43-test offline suite — and the **n8n 8-node orchestration flow** are built and validated; the image classifier reaches **84.6%** room-type accuracy on fresh images, and the full pipeline passes both guardrails with correct residential/commercial routing — verified end-to-end from the WebUI through n8n and back. EC2 deployment remains.
 
 ## 2. Introduction & Real-World Scenario
 A real-estate agency receives dozens of new property submissions every day, each a written description plus photographs. Staff must check the submission is genuine (not spam/off-topic), identify property type/condition/features, score the uploaded images, find similar past listings, route the listing to residential vs. commercial teams, and produce a clean published brief.
