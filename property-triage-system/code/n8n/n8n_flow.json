@@ -379,6 +379,135 @@
         528
       ],
       "webhookId": "property-triage-listing"
+    },
+    {
+      "parameters": {
+        "content": "## 🏠 Property Triage — listing pipeline\n\nWebhook → validate input → extract fields → **AI agent enriches** (RAG + image + tools) → write brief → audit output → route to the right team.\n\n**Two guardrail checks: one on the way IN (is this a real listing?), one on the way OUT (is the brief truthful?).**",
+        "height": 95,
+        "width": 2120,
+        "color": 7
+      },
+      "id": "note-title",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ①  Guardrails — INPUT check\n\nValidates the **raw submission** before any processing:\n• genuine property listing?\n• Hebrew / English?\n• not spam / offensive / prompt-attack?\n\n**Fail → reject immediately** (the IF node) — never waste LLM calls on junk.",
+        "height": 210,
+        "width": 540,
+        "color": 4
+      },
+      "id": "note-input",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        235
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### AI enrichment (Gemini)\n\n**Information Extractor** → structured fields.\n**AI Agent** calls 3 tools to ground its analysis: `rag_lookup` (comparables), `image_analyser` (room + condition), `property_agent` (multi-step).\n**LLM Chain** + Output Parser → the brief.",
+        "height": 150,
+        "width": 720,
+        "color": 5
+      },
+      "id": "note-ai",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ②  Guardrails — OUTPUT check\n\nAudits the **generated brief** before publishing: no invented prices, fabricated certifications, or false legal claims (checked against the listing + the agent's findings).\n\n*Different job from ① — input asks 'is this a real listing?', output asks 'is the brief truthful?'*",
+        "height": 175,
+        "width": 330,
+        "color": 4
+      },
+      "id": "note-output",
+      "name": "Sticky Note3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        685,
+        85
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Router\n\nSends the brief to the **residential** or **commercial** team based on the property type.",
+        "height": 130,
+        "width": 250,
+        "color": 6
+      },
+      "id": "note-router",
+      "name": "Sticky Note4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1150,
+        110
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "outpass",
+              "leftValue": "={{ $json.pass }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-output-passed",
+      "name": "IF output passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        864,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"review\", \"reason\": $('Guardrails Output').item.json.reason, \"brief_markdown\": $('LLM Chain').item.json.output.brief_markdown, \"guardrail\": { \"input_pass\": true, \"output_pass\": false } } }}",
+        "options": {}
+      },
+      "id": "respond-review",
+      "name": "Respond Review",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1080,
+        472
+      ]
     }
   ],
   "pinData": {},
@@ -420,7 +549,7 @@
       "main": [
         [
           {
-            "node": "Router",
+            "node": "IF output passed",
             "type": "main",
             "index": 0
           }
@@ -551,6 +680,24 @@
         [
           {
             "node": "Guardrails Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF output passed": {
+      "main": [
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Review",
             "type": "main",
             "index": 0
           }
