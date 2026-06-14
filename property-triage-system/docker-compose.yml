@@ -1,0 +1,49 @@
+# Property Triage — the four FastAPI microservices on one host (local or EC2).
+#
+# On EC2, AWS credentials come from the instance IAM role (boto3's default chain) —
+# there are NO keys in this file. Resource IDs (KB / Guardrail) and the Gemini
+# SECRET NAME are config, not secrets. The Gemini key itself stays in Secrets Manager.
+#
+# Run:  docker compose up --build -d      (from this directory)
+name: property-triage
+
+services:
+  rag:
+    build: { context: ./code, dockerfile: rag_service/Dockerfile }
+    environment:
+      AWS_REGION: us-east-1
+      KB_ID: "3KTFERDLUV"
+      GEMINI_SECRET_NAME: property-triage/gemini-api-key
+      GEMINI_MODEL: gemini-2.5-flash
+    ports: ["8001:8001"]
+    restart: unless-stopped
+
+  guardrails:
+    build: { context: ./code, dockerfile: guardrails_service/Dockerfile }
+    environment:
+      AWS_REGION: us-east-1
+      GUARDRAIL_ID: huksxm9z68f6
+      GUARDRAIL_VERSION: DRAFT
+      GEMINI_SECRET_NAME: property-triage/gemini-api-key
+      GEMINI_MODEL: gemini-2.5-flash
+    ports: ["8003:8003"]
+    restart: unless-stopped
+
+  image:
+    build: { context: ./code, dockerfile: image_analyser/Dockerfile }
+    # model.pth (git-ignored) is placed into code/image_analyser/ before build by
+    # the EC2 bootstrap (pulled from S3); without it the service runs as a stub.
+    ports: ["8002:8002"]
+    restart: unless-stopped
+
+  agent:
+    build: { context: ./code, dockerfile: agent_service/Dockerfile }
+    environment:
+      AWS_REGION: us-east-1
+      RAG_URL: http://rag:8001
+      IMAGE_URL: http://image:8002
+      GEMINI_SECRET_NAME: property-triage/gemini-api-key
+      GEMINI_MODEL: gemini-2.5-flash
+    ports: ["8000:8000"]
+    depends_on: [rag, image]
+    restart: unless-stopped
