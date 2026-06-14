@@ -12,8 +12,8 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 
 | # | Surface | Component | Status |
 |---|---------|-----------|--------|
-| 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ⬜ Phase 4 |
-| 2 | n8n AI Agent | agent system prompt + tool descriptions (Gemini) | ⬜ Phase 4 |
+| 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ✅ V1 (live, no invention) |
+| 2 | n8n AI Agent | agent system prompt + tool descriptions + brief (Gemini) | ✅ V1 agent + brief V1→V4 |
 | 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ✅ V1 = 10/10 |
 | 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
 | 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V6 = 10/10 |
@@ -24,28 +24,50 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 ## Surface 1 — n8n Information Extractor (Gemini)
 **Goal:** extract `property_type, location, price, num_rooms, key_features, certifications` from a listing description; extract only facts present in the text; handle missing fields gracefully; return consistent types.
 
-**Test cases (define before V1):**
+**Test cases (defined before V1):**
 
-| # | Input (listing snippet) | Expected output (key fields) |
+| # | Input (listing snippet) | Expected |
 |---|---|---|
-| 1 | _TBD_ | _TBD_ |
-| … | … | … |
+| 1 | "Bright 3-bedroom apartment in Ramat Gan, 95 sqm, 2nd floor, balcony, parking, 2,450,000 NIS" | apartment · Ramat Gan · 2,450,000 NIS · 3 rooms · feature list |
+| 2 | "Modern 220 sqm open-plan office, 8th floor, Tel Aviv CBD, 12 parking, fiber, 24/7 access, 9,800,000 NIS" | office · Tel Aviv · 9,800,000 NIS · feature list · certifications empty |
+| 3 | "nice place, good area" (vague) | fields omitted — no invention |
+| … | (full 10-case set rounded out during n8n hardening) | |
 
-_V1–V5 + Final: to be filled when building the n8n flow (Phase 4)._
+### V1 — Baseline (2026-06-12)
+`systemPromptTemplate`: "Extract ONLY facts explicitly present — never infer, guess, or invent; omit anything not stated", plus per-attribute "only if stated" descriptions. Schema: 6 attributes (property_type, location, price, num_rooms:number, key_features, certifications).
+
+**Results:** on the live pipeline runs the residential and commercial listings extracted cleanly (correct type / location / price / rooms / features; `certifications` empty when absent) with **no invented fields** — vague phrasing yields empty fields rather than guesses.
+
+_V2+ : run the full 10-case set and normalise price to a number during n8n hardening._
 
 ---
 
 ## Surface 2 — n8n AI Agent prompt + tool descriptions (Gemini)
 **Goal:** define the agent role (senior property analyst), the three tools it can call (RAG, Image Analyser, LangGraph), and the structured JSON it must return. Tool descriptions must make the agent pick the right tool. Test with the same **10 benchmark queries** each version.
 
-**Benchmark queries (define before V1):**
+**Benchmark queries (defined before V1):**
 
-| # | Query | Expected tool(s) / behaviour |
+| # | Listing / query | Expected |
 |---|---|---|
-| 1 | _TBD_ | _TBD_ |
-| … | … | … |
+| 1 | residential apartment, no images | calls rag_lookup; routes residential |
+| 2 | commercial office, no images | calls rag_lookup; routes commercial |
+| 3 | listing with image URLs | calls image_analyser per image |
+| 4 | "what renovation reaches condition 5?" | calls property_agent |
+| … | (full 10-query set rounded out during n8n hardening) | |
 
-_V1–V5 + Final: to be filled when building the n8n flow (Phase 4)._
+### V1 — Agent prompt + tool descriptions (2026-06-12)
+Agent `systemMessage`: senior property analyst; "ground EVERY claim in tool results — never invent comparables, prices, or condition scores." Three tools with precise descriptions (`rag_lookup` / `image_analyser` / `property_agent` — each states its input and when to use it).
+
+**Results (live):** the agent called `rag_lookup` for description-only listings and grounded its analysis in real KB comparables (cited listing **L009** for the office). Routing was correct both ways (residential apartment, commercial office); the tool descriptions were unambiguous enough that the right tool was selected without mis-routing.
+
+### LLM Chain brief — V1 → V4 (the output-guardrail loop)
+The final-brief prompt was iterated against the **output guardrail** (Surface #4), which kept correctly rejecting unsupported claims:
+- **V1** — plain "write a brief": added "Exceptional Value… positioned for a swift sale" → `output_pass: false` (marketing claims not in source).
+- **V2** — added a copywriter **persona** + "no valuation/marketing claims": still slipped in "competitively priced… strong value".
+- **V3** — expanded the auditor's **`source`** to include the agent's findings (so RAG-grounded comparisons are judged fair): closer, but the brief then **computed** a price-per-sqm ("≈44,545 NIS/sqm") → flagged as an invented figure.
+- **V4 (final)** — forbade **derived figures and comparisons not in the findings**: `output_pass: true` for both residential and commercial; the commercial brief now cites a real comparable (L009) grounded in RAG.
+
+_Full 10-query benchmark + pass-rate rounded out during n8n hardening._
 
 ---
 

@@ -1,0 +1,573 @@
+{
+  "name": "Property Triage — full pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "text": "={{ $('Webhook').item.json.body.description }}",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "property_type",
+              "description": "e.g. apartment, house, villa, office, retail, warehouse — only if explicitly stated"
+            },
+            {
+              "name": "location",
+              "description": "city or neighbourhood, only if stated"
+            },
+            {
+              "name": "price",
+              "description": "asking price with currency, only if stated"
+            },
+            {
+              "name": "num_rooms",
+              "type": "number",
+              "description": "number of rooms if stated"
+            },
+            {
+              "name": "key_features",
+              "description": "comma-separated notable features mentioned in the text"
+            },
+            {
+              "name": "certifications",
+              "description": "permits or certifications mentioned, else leave empty"
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "You extract structured fields from a real-estate listing. Extract ONLY facts explicitly present in the text — never infer, guess, or invent. If a field is not stated, omit it.\n\n{format_instructions}"
+        }
+      },
+      "id": "d4eb17d9-36af-4357-b02a-aaf980d83b64",
+      "name": "Information Extractor",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.1,
+      "position": [
+        -144,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "2bcd72ad-8254-49a8-bd4a-559a63ec6e4f",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        512
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "htvOlOBtLZNHwiQi",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=A new property listing was submitted.\n\nDescription:\n{{ $('Webhook').item.json.body.description }}\n\nExtracted fields:\n{{ JSON.stringify($json) }}\n\nImage URLs (if any):\n{{ JSON.stringify($('Webhook').item.json.body.images || []) }}\n\nAnalyse this listing using your tools, then summarise its positioning, comparables, and any image findings.",
+        "options": {
+          "systemMessage": "You are a senior property analyst at a real-estate agency. You receive a listing's description and extracted fields. Ground EVERY claim in tool results — never invent comparables, prices, or condition scores. Use:\n- rag_lookup: find comparable past listings and market positioning.\n- image_analyser: get the room type and 1-5 condition of each provided image.\n- property_agent: answer complex multi-step questions (e.g. renovation needed to reach top condition).\nCall the tools you need, then return a concise analysis (positioning, comparables summary, image findings) based strictly on the tool outputs and the provided fields."
+        }
+      },
+      "id": "cc810078-9ace-4bec-a643-57e6d088af77",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        96,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Find the most similar past property listings and a market-positioning insight. Input: the property description string. Returns comparable listings (id, text, score) and a grounded insight. Use to assess price/condition context.",
+        "method": "POST",
+        "url": "http://host.docker.internal:8001/query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"description\": \"{description}\"\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "description",
+              "description": "the property description to find comparables for",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "f897faaa-6d3e-47ab-b52a-7162d946cbdf",
+      "name": "rag_lookup",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        128,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Classify ONE property photo into a room type (kitchen/bathroom/bedroom/living_room/exterior/other/not_a_room) and a 1-5 condition score. Input: an image URL. Use once per provided image.",
+        "method": "POST",
+        "url": "http://host.docker.internal:8002/analyse",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"image_url\": \"{image_url}\"\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "image_url",
+              "description": "URL of the property image to classify",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "a0c03a75-8119-4031-a8dd-2e55c4424171",
+      "name": "image_analyser",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Answer a complex, multi-step question about the property by combining retrieval and image analysis. Input: a natural-language question. Use for reasoning like 'what renovation would reach condition 5?'.",
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/agent/run",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"query\": \"{query}\"\n}",
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "query",
+              "description": "the multi-step question to answer about the property",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "aed5d776-e427-4e97-8e6d-89a4bae4cabb",
+      "name": "property_agent",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a senior real-estate copywriter. Write an accurate, publishable property listing brief in Markdown, then choose a routing label.\n\nDescribe ONLY the property's stated attributes from the inputs below. Do NOT invent or COMPUTE figures (no derived price-per-sqm), do NOT add valuation/marketing claims ('competitively priced', 'strong value', 'exceptional value', 'swift sale'), and do NOT compare to other properties UNLESS the analyst findings explicitly state the comparison. Keep it factual, concrete, and concise.\n\nExtracted fields:\n{{ JSON.stringify($('Information Extractor').item.json) }}\n\nAnalyst findings:\n{{ $('AI Agent').item.json.output }}\n\nRouting rule: 'residential' for apartment/house/villa; 'commercial' for office/retail/warehouse/industrial.\n",
+        "hasOutputParser": true
+      },
+      "id": "62e16f35-8f46-44a0-a2ec-58e355d6a724",
+      "name": "LLM Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        464,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"brief_markdown\": { \"type\": \"string\" },\n    \"routing\": { \"type\": \"string\", \"enum\": [\"residential\", \"commercial\"] }\n  },\n  \"required\": [\"brief_markdown\", \"routing\"]\n}"
+      },
+      "id": "5ad3600a-ec3b-44f4-a7e2-e89a93798200",
+      "name": "Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        608,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8003/check/output",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $('LLM Chain').item.json.output.brief_markdown }}"
+            },
+            {
+              "name": "source",
+              "value": "={{ $('Webhook').item.json.body.description + \"\\n\\nAnalyst findings:\\n\" + $('AI Agent').item.json.output }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "502522fa-fb51-454b-b714-0e3b16e80e17",
+      "name": "Guardrails Output",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('LLM Chain').item.json.output.routing }}",
+                    "rightValue": "commercial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('LLM Chain').item.json.output.routing }}",
+                    "rightValue": "residential",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "bae5164d-4f18-4f63-91c0-70f860d1112b",
+      "name": "Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        960,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"ok\", \"routing\": $('LLM Chain').item.json.output.routing, \"brief_markdown\": $('LLM Chain').item.json.output.brief_markdown, \"extracted\": $('Information Extractor').item.json, \"guardrail\": { \"input_pass\": true, \"output_pass\": $('Guardrails Output').item.json.pass } } }}",
+        "options": {}
+      },
+      "id": "ec57df87-b8a6-4ab7-9b13-e194416505d9",
+      "name": "Respond Brief",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "pass-true",
+              "leftValue": "={{ $json.pass }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "667e0ec4-3bdf-4688-9534-90dfb8cdeb4d",
+      "name": "IF passed1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"rejected\", \"reason\": $json.reason } }}",
+        "options": {}
+      },
+      "id": "8770a560-1ceb-4688-be13-317f09100997",
+      "name": "Respond Rejected1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8003/check/input",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"text\": $json.body.description } }}",
+        "options": {}
+      },
+      "id": "6ca4ba54-7085-4530-a70c-1135f8d0c335",
+      "name": "Guardrails Input",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -592,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "listing",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d3e426dd-1eaf-4efa-a4fc-3276b5d4e567",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        528
+      ],
+      "webhookId": "property-triage-listing"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Information Extractor": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Guardrails Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails Output": {
+      "main": [
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router": {
+      "main": [
+        [
+          {
+            "node": "Respond Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "rag_lookup": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "image_analyser": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "property_agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "LLM Chain",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF passed1": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Rejected1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardrails Input": {
+      "main": [
+        [
+          {
+            "node": "IF passed1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Guardrails Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "287c1279-af09-4ada-a7d0-18750c0b5aa9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9e2b0944a4209078ba74595170a2e81bf1637e86932820bbce30ad9fcf08e484"
+  },
+  "id": "WJwAUhOk4uFSWe06",
+  "tags": []
+}
