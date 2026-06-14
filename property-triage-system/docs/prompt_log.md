@@ -13,7 +13,7 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 | # | Surface | Component | Status |
 |---|---------|-----------|--------|
 | 1 | n8n Information Extractor | systemPromptTemplate for structured field extraction (Gemini) | ✅ V1 = 9/10, **0 inventions** |
-| 2 | n8n AI Agent | agent system prompt + tool descriptions + brief (Gemini) | ✅ V1 agent + brief V1→V4 |
+| 2 | n8n AI Agent | agent system prompt + tool descriptions + brief (Gemini) | ✅ 10/10 end-to-end + brief V1→V4 |
 | 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ✅ V1 = 10/10 |
 | 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
 | 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V6 = 10/10 |
@@ -77,7 +77,21 @@ The final-brief prompt was iterated against the **output guardrail** (Surface #4
 - **V3** — expanded the auditor's **`source`** to include the agent's findings (so RAG-grounded comparisons are judged fair): closer, but the brief then **computed** a price-per-sqm ("≈44,545 NIS/sqm") → flagged as an invented figure.
 - **V4 (final)** — forbade **derived figures and comparisons not in the findings**: `output_pass: true` for both residential and commercial; the commercial brief now cites a real comparable (L009) grounded in RAG.
 
-_Full 10-query benchmark + pass-rate rounded out during n8n hardening._
+### End-to-end benchmark — 10 listings (2026-06-14)
+Ran 10 diverse listings through the live n8n pipeline and scored the agent's
+behaviour by outcome (accept/reject + residential/commercial routing):
+
+| outcome tested | result |
+|----------------|--------|
+| 4 residential (apartment/villa/house/2-room) | all `ok` + routed residential ✓ |
+| 3 commercial (office/warehouse/retail) | all `ok` + routed commercial ✓ |
+| 1 Hebrew residential | `ok` + residential ✓ |
+| crypto spam + off-topic ("write me code") | both `rejected` ✓ |
+
+**Pass rate: 10/10.** Tool selection isn't exposed in the webhook response, so
+this measures the agent pipeline by its observable outcome (every accepted brief
+was grounded in real KB comparables — see Surface #3). Combined with the brief
+V1→V4 iteration above, Surface #2 is complete.
 
 ---
 
