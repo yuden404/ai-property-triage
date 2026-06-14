@@ -47,3 +47,27 @@ services:
     ports: ["8000:8000"]
     depends_on: [rag, image]
     restart: unless-stopped
+
+  # --- full-stack extras (for a hosted demo) -------------------------------- #
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      N8N_SECURE_COOKIE: "false"          # allow login over plain http (public IP, no TLS)
+      N8N_RUNNERS_ENABLED: "true"
+    ports: ["5678:5678"]
+    volumes: ["n8n_data:/home/node/.n8n"]
+    restart: unless-stopped
+
+  webui:
+    build: { context: ./code/webui }
+    environment:
+      HOST: 0.0.0.0
+      PORT: "5050"
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook/listing   # reaches n8n by compose service name
+      # No Ollama in the cloud → the Assistant tab degrades gracefully (Submit/Dashboard work).
+    ports: ["5050:5050"]
+    depends_on: [n8n]
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
