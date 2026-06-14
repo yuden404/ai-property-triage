@@ -1,7 +1,7 @@
 # Project Plan & Progress — AI-Powered Real Estate Property Triage System
 
 **Owner:** Yehuda Rokach · **Type:** Individual final project · **Due:** ~2.5 weeks from 2026-06-06
-**Status:** Phases 0–4 done — WebUI (Flask) + 4 services (43 pytest) + **n8n 8-node flow validated locally** (both guardrails pass, routing verified). **Next:** wire WebUI → webhook + EC2 deploy. **Last updated:** 2026-06-14
+**Status:** Phases 0–4 done — WebUI (Flask) + 4 services (43 pytest) + **n8n 8-node flow validated locally** (both guardrails pass, routing verified). **Next:** demo video + ZIP packaging. **Last updated:** 2026-06-14
 
 This is the **living** project doc: it tracks decisions and progress as we build. The formal report lives in [`PROJECT_BOOK.pdf`](PROJECT_BOOK.pdf); the code lives in [`property-triage-system/`](property-triage-system/).
 
@@ -12,7 +12,7 @@ This is the **living** project doc: it tracks decisions and progress as we build
 - [x] **Phase 1 — WebUI** ✓ — rebuilt as **HTML/CSS/JS + Flask** (3 tabs: Assistant / Submit / Dashboard); streaming Ollama chat (listings-aware), drag-&-drop upload, Chart.js dashboard. Prompt Surface #5 V1→V6 (10/10).
 - [x] **Phase 2 — Bedrock + microservices** ✓ — AWS profile `course` · Gemini key in Secrets Manager · **Bedrock KB** on S3 Vectors (`KB_ID=3KTFERDLUV`, 24/24) · **RAG** (:8001, Surface #3 10/10) · **Guardrails** (Bedrock Guardrail `huksxm9z68f6` + Gemini rails, :8003, Surface #4; **PII masking removed** — no email/phone fields) · **LangGraph Agent** (:8000, planner→tool_executor→synthesiser, Gemini, Surface #2 tool descriptions). All 4 services have Dockerfiles. **pytest suite: 43 tests, mocked/offline.** **2 code-review rounds applied** (XSS, error handling, fail-closed guardrail, cache safety, …).
 - [x] **Phase 3 — Image Analyser** ✓ — EfficientNet-B0 fine-tune (`train.py`); data via `prepare_data.py` (kagglehub, 500/class, 7 classes). **Rooms-only argmax 84.6% (>75% ✓)**; 7-class val 84.4%. Added a **`not_a_room` reject class** for OOD robustness. Service :8002 loads `model.pth`. See [`docs/model_card.md`](property-triage-system/docs/model_card.md). ⬜ condition-score head (placeholder for now).
-- [x] **Phase 4 — n8n flow** ✓ — 8-node flow built & validated locally (Webhook → Guardrails-In → IF → Information Extractor → AI Agent + 3 tools → LLM Chain → Guardrails-Out → Router → Respond). **Both guardrails pass; routing residential/commercial verified; spam rejected.** Captures Surfaces #1 (Extractor) + #2 (Agent + brief V1→V4). Exported to `code/n8n/n8n_flow.json`. **WebUI wired to the webhook — verified end-to-end** (browser → WebUI → n8n → 4 services → brief, both guardrails pass). ⬜ EC2 deploy
+- [x] **Phase 4 — n8n flow** ✓ — 8-node flow built & validated locally (Webhook → Guardrails-In → IF → Information Extractor → AI Agent + 3 tools → LLM Chain → Guardrails-Out → Router → Respond). **Both guardrails pass; routing residential/commercial verified; spam rejected.** Captures Surfaces #1 (Extractor) + #2 (Agent + brief V1→V4). Exported to `code/n8n/n8n_flow.json`. **WebUI wired** + **deployed to EC2** (4 services via Docker Compose + IAM role, verified end-to-end).
 - [~] **Phase 5 — polish** — output-guardrail **human-review branch ✓** (output fail → held, not published); `architecture.md` ✓; remaining: full prompt-log 10-case runs
 - [ ] **Phase 6 — Demo video + ZIP package** + finalize `PROJECT_BOOK.pdf`
 
@@ -42,7 +42,7 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | Criterion | Weight | Target | Actual (in progress) |
 |---|---|---|---|
 | n8n Flow | 20% | Excellent | 8-node flow built + validated locally (both guardrails, routing, spam) ✓ |
-| EC2 Services | 25% | Excellent | 3/4 built + tested (RAG, Guardrails, Agent); Image trained · **EC2 deploy pending** |
+| EC2 Services | 25% | Excellent | **4/4 deployed on EC2** (Docker Compose, IAM role, SSM-managed); RAG `/query` verified live on the box ✓ |
 | Image Analyser | 10% | Excellent (>75%) | **84.6%** rooms-only on fresh images ✓ |
 | Guardrails | 10% | Excellent (<5% FP) | Built (Surface #4 was 11/11); fail-closed |
 | Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | 5/6 surfaces with pass rates (#1 9/10, #3 10/10, #4 11/11, #5 10/10, #6 9/10); #2 V1→V4 + end-to-end |

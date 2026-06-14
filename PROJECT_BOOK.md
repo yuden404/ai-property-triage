@@ -116,10 +116,16 @@ Six prompt surfaces are tuned and logged with ≥10 test cases and a measured pa
 *Still to do:* RAG precision@3 benchmark (managed-vector-store extension), and an end-to-end run with screenshots once n8n is wired.
 
 ## 8. Deployment Notes
-*To be completed at the deployment phase.*
-- EC2 instance type(s), ports, security-group rules.
-- Docker build notes (`--platform linux/amd64` on Apple Silicon).
-- Deviations from the specification.
+The four FastAPI services are deployed on **AWS EC2** via Docker Compose and were verified end-to-end.
+
+- **Instance:** t3.large, Amazon Linux 2023, `us-east-1`, 30 GB gp3 root.
+- **Bootstrap** (`deploy/ec2-userdata.sh`): installs Docker + the Compose plugin, git-clones the public repo, pulls the trained `model.pth` from S3, and runs `docker compose up --build -d` (`docker-compose.yml` at the project root).
+- **Credentials — no keys on the box:** the instance carries an **IAM role**; the services read the Gemini key from **Secrets Manager** and call **Bedrock** (KB `Retrieve` + `ApplyGuardrail`) through it. Resource IDs and the Gemini secret *name* are plain Compose env.
+- **Management via SSM:** no SSH key and **no public inbound** (the security group has no ingress rules) — the instance is driven through AWS Systems Manager.
+- **Verified on EC2:** all four `/health` returned ok (image `model_loaded: true` from the S3 model), and a live RAG `/query` returned real KB comparables (L010/L002/L001) plus a grounded Gemini insight — proving the role-based AWS access works end-to-end.
+- **Cost control:** the instance is **stopped when idle** (no compute charge; containers auto-resume on start via `restart: unless-stopped`).
+- **Docker on Apple Silicon:** build `--platform linux/amd64` for parity with the x86 EC2 host.
+- **n8n:** runs in Docker locally for development; for a fully-hosted demo it can run on the same instance with its Gemini credential configured once.
 
 ## 9. Conclusions & Future Work
 *To be written at the end.* Candidate future work: the human-in-the-loop feedback/active-learning loop (deferred), a managed Pinecone/Weaviate comparison, and richer monitoring.
