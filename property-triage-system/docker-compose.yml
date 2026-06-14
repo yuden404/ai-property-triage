@@ -64,10 +64,17 @@ services:
       HOST: 0.0.0.0
       PORT: "5050"
       N8N_WEBHOOK_URL: http://n8n:5678/webhook/listing   # reaches n8n by compose service name
-      # No Ollama in the cloud → the Assistant tab degrades gracefully (Submit/Dashboard work).
+      OLLAMA_URL: http://ollama:11434                    # Ollama runs in-cluster (CPU)
     ports: ["5050:5050"]
-    depends_on: [n8n]
+    depends_on: [n8n, ollama]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes: ["ollama_data:/root/.ollama"]
+    ports: ["11434:11434"]
     restart: unless-stopped
 
 volumes:
   n8n_data:
+  ollama_data:
