@@ -46,7 +46,7 @@ The system has four layers, each communicating with the next over HTTP.
 
 **Layer 1 — Web UI (HTML/CSS/JS + Flask).** Two working surfaces plus a monitoring extension: (a) a conversational assistant backed by an **Ollama** Llama 3.1 server (on the instance GPU), **grounded on the Bedrock Knowledge Base** — each turn builds its retrieval query from the recent conversation and pins any listing already discussed, so follow-up questions stay coherent, and it answers by stable ID; photos of a referenced listing appear beneath the reply; (b) a listing submission form that uploads photos to **S3**, runs them through the Image Analyser, POSTs to the n8n webhook (behind a full-screen pipeline loader), and renders the brief plus a per-photo room/condition grid; (c) a monitoring dashboard (Chart.js) whose rows open a per-listing detail view. Built as a custom Flask app (instructor permits) for full design control.
 
-**Layer 2 — n8n orchestration.** An 8-node flow: webhook trigger → guardrails input check → IF (pass/fail) → Information Extractor (Gemini) → AI Agent (Gemini; dispatches tool calls to the services) → LLM Chain (final brief) → guardrails output check → router (residential vs. commercial).
+**Layer 2 — n8n orchestration.** An 8-node flow: webhook trigger → guardrails input check → IF (pass/fail) → Information Extractor (Gemini) → AI Agent (Gemini; dispatches tool calls to the services — it always invokes the **LangGraph agent**, which itself orchestrates RAG + Image, and may call `rag_lookup`/`image_analyser` directly) → LLM Chain (final brief) → guardrails output check → router (residential vs. commercial).
 
 **Layer 3 — FastAPI microservices.** Four independent, containerised services: RAG, Image Analyser, Guardrails, and a LangGraph Agent. Each exposes a single well-defined endpoint.
 
@@ -98,7 +98,7 @@ Input check: Bedrock `ApplyGuardrail` for safety (content filters, denied topics
 A 3-node state graph — planner → tool executor → synthesiser — using Gemini, where the executor calls the RAG and Image Analyser services. Answers multi-step questions (e.g., "what renovation work would bring this property to condition score 5?"). Output: `{ answer, tools_used, reasoning_steps }`.
 
 ### 5.6 n8n flow
-Eight nodes wiring the webhook through the guardrails, the Gemini Information Extractor and AI Agent, the LLM Chain that produces the brief, the output guardrail, and a router that sends residential vs. commercial listings to different teams.
+Eight nodes wiring the webhook through the guardrails, the Gemini Information Extractor and AI Agent, the LLM Chain that produces the brief, the output guardrail, and a router that sends residential vs. commercial listings to different teams. The AI Agent's prompt mandates a call to the **LangGraph agent** on every listing (Surface #2 V2), so the multi-step planner→tools→synthesiser reasoner is part of the normal pipeline, not only a standalone endpoint.
 
 ## 6. Prompt Engineering
 Seven prompt surfaces are tuned and logged with ≥10 test cases and a measured pass rate per surface (the guideline asks for five): the n8n Information Extractor, the n8n AI Agent prompt, the RAG insight/citation prompt, the Guardrails rail prompts, the Ollama system prompt, the LangGraph Agent tool descriptions, and the image condition rubric (Gemini Vision). The full iteration history is in [`docs/prompt_log.md`](property-triage-system/docs/prompt_log.md).

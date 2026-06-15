@@ -94,6 +94,21 @@ this measures the agent pipeline by its observable outcome (every accepted brief
 was grounded in real KB comparables — see Surface #3). Combined with the brief
 V1→V4 iteration above, Surface #2 is complete.
 
+### V2 — mandate the LangGraph agent (2026-06-15)
+**Failure mode:** with V1's "call the tools you need", Gemini almost never chose
+`property_agent` for a plain listing (it got comparables from `rag_lookup` and
+photos from `image_analyser` and stopped), so the **LangGraph service was built
+and deployed but rarely exercised in the pipeline** — only reachable via its own
+`/agent/run` endpoint. **Change:** the agent `systemMessage` now instructs it to
+call `property_agent` for **every** listing — sending it a question about the
+renovation work needed to reach top condition and the market positioning — and to
+fold its reasoning into the analysis (`rag_lookup` / `image_analyser` remain
+available directly). This makes the spec's *"planner → tool-execution (RAG +
+Image) → synthesiser"* agent part of the normal flow, not just a standalone
+endpoint. Deployed by updating the AI Agent node's System Message in the live n8n
+(the running workflow lives in the n8n volume, not in git) and mirrored to
+`code/n8n/n8n_flow.json`.
+
 ---
 
 ## Surface 3 — RAG insight / citation prompt (Gemini, Service 1)

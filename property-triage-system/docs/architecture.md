@@ -46,7 +46,7 @@ The whole stack runs on one **GPU EC2 instance** (`g4dn.xlarge` / Tesla T4 — O
 | RAG | 8001 | `POST /query` → `{similar_listings, insight}` | Bedrock KB (S3 Vectors) retrieve + Gemini cited insight; `retrieve-only` mode for the chat; accepted submissions ingested back into the KB |
 | Image Analyser | 8002 | `POST /analyse` → `{room_type, condition_score, confidence}` | EfficientNet-B0, two heads (room 7-class + condition 1–5); room from CNN, **condition served by Gemini Vision** (trained head = spec + fallback) |
 | Guardrails | 8003 | `POST /check/input` `/check/output` → `{pass, reason, safe_text}` | Bedrock ApplyGuardrail + Gemini classifier/auditor |
-| LangGraph Agent | 8000 | `POST /agent/run` → `{answer, tools_used, reasoning_steps}` | LangGraph (planner→tool_executor→synthesiser), Gemini, calls RAG + Image |
+| LangGraph Agent | 8000 | `POST /agent/run` → `{answer, tools_used, reasoning_steps}` | LangGraph (planner→tool_executor→synthesiser), Gemini, calls RAG + Image; the n8n AI Agent invokes it on every listing |
 
 ## Two AWS Bedrock services (the ≥2 requirement)
 1. **Bedrock Knowledge Bases** — managed RAG retrieval (Titan v2 embeddings on **S3 Vectors**).
