@@ -287,31 +287,92 @@ def log_event(agent: str, result: dict, listing_id: str = "") -> None:
 # --------------------------------------------------------------------------- #
 # Ollama (Assistant)
 # --------------------------------------------------------------------------- #
-def rag_listings_context(query: str) -> str:
-    """Ground the chat on the RAG/KB: retrieve listings relevant to the question so the
-    assistant can answer about the whole corpus (seed comparables + every accepted
-    submission) — persistent across rebuilds. Falls back to the local store only if the
-    RAG service is unreachable."""
-    if query.strip():
+# Stable listing IDs as they appear in chat text: seed ids (L015) and submissions.
+LISTING_ID_RE = re.compile(r"SUBMITTED-\d{14}-[0-9a-f]{6}|\bL\d{2,}\b")
+
+
+def _retrieval_query(history: list[dict]) -> str:
+    """Build the retrieval query from the last few USER turns, not just the latest —
+    so a vague follow-up ("tell me about it") still carries the topic of the
+    conversation and retrieves the same listings instead of a random new set."""
+    users = [m.get("content", "") for m in history if m.get("role") == "user"]
+    return "  ".join(users[-3:]).strip()
+
+
+def _listing_block_from_record(rec: dict) -> str:
+    """Format a stored listing record as a grounding block, same shape as the KB
+    text (starts 'Listing <ID>: …') so pinned and retrieved blocks read alike."""
+    parts = [f"Listing {rec.get('id', '?')}: {rec.get('property_type', 'property')} "
+             f"in {rec.get('location', '?')}"]
+    if rec.get("description"):
+        parts.append(rec["description"].strip())
+    if rec.get("agent") and rec["agent"] != "—":
+        parts.append(f"Listing agent: {rec['agent']}")
+    return "\n".join(parts)
+
+
+def _pinned_listing_blocks(history: list[dict]) -> list[tuple[str, str]]:
+    """Listings already named anywhere in the conversation, fetched by id from the
+    record store. Pinning them means a listing once discussed never 'disappears'
+    on a later turn (retrieval for a vague follow-up used to drop it, which made
+    the assistant contradict itself). Submitted listings live in DynamoDB; seed
+    ids aren't there and are left to normal retrieval."""
+    out, seen = [], set()
+    if not DDB_LISTINGS_TABLE:
+        return out
+    for m in history:
+        for lid in LISTING_ID_RE.findall(m.get("content", "") or ""):
+            if lid in seen:
+                continue
+            seen.add(lid)
+            try:
+                rec = _ddb_get_doc(DDB_LISTINGS_TABLE, lid)
+            except Exception:
+                rec = None
+            if rec:
+                out.append((lid, _listing_block_from_record(rec)))
+    return out
+
+
+def rag_listings_context(history: list[dict]) -> str:
+    """Ground the chat on the RAG/KB. Two things keep follow-up turns coherent:
+    (1) the retrieval query is built from the last few user turns, so a vague
+        "tell me about it" still carries the topic and retrieves the same listings;
+    (2) any listing already named earlier in the conversation is pinned — fetched
+        by id and always included — so a listing once discussed never vanishes on a
+        later turn (the cause of the self-contradiction).
+    Falls back to the local store only if the RAG service is unreachable AND
+    nothing was pinned."""
+    blocks: dict[str, str] = {}  # id -> text; dict keeps insertion order + dedups
+
+    for lid, text in _pinned_listing_blocks(history):  # (2) pinned, listed first
+        blocks.setdefault(lid, text)
+
+    query = _retrieval_query(history)  # (1) retrieved, relevant to the topic
+    if query:
         try:
             r = requests.post(f"{RAG_URL}/query",
                               json={"description": query, "with_insight": False}, timeout=20)
             r.raise_for_status()
-            hits = r.json().get("similar_listings", []) or []
-            if hits:
-                # Present each listing by its real ID/title (the text already starts
-                # "Listing <ID>: <title>"). NO positional "Listing 1/2/3" — the set is
-                # re-retrieved each turn, so position numbers are unstable and made the
-                # model contradict itself.
-                blocks = [(h.get("text") or "").strip() for h in hits]
-                return ("PROPERTY LISTINGS RETRIEVED FROM THE KNOWLEDGE BASE for this question. "
-                        "Refer to each property by its ID (e.g. L015) or title, NEVER by a position "
-                        "number. Discuss ONLY the properties below; if asked about one not listed "
-                        "here, say you don't have it — do not contradict an earlier answer:\n\n"
-                        + "\n\n----\n\n".join(blocks))
+            for h in (r.json().get("similar_listings", []) or []):
+                text = (h.get("text") or "").strip()
+                if not text:
+                    continue
+                m = LISTING_ID_RE.search(text)
+                blocks.setdefault(m.group(0) if m else text[:40], text)
         except requests.exceptions.RequestException:
-            pass
-    return listings_context()  # fallback: local store if the RAG service is unreachable
+            if not blocks:
+                return listings_context()  # RAG down and nothing pinned → local store
+
+    if not blocks:
+        return ""
+    # Refer to listings by stable ID — NEVER a position number (the set changes
+    # between turns, so positions are unstable and caused self-contradiction).
+    return ("PROPERTY LISTINGS relevant to this conversation. Refer to each property "
+            "by its ID (e.g. L015) or title, NEVER by a position number. Discuss ONLY "
+            "the properties below; if asked about one not listed here, say you don't "
+            "have it — and do NOT contradict a listing you described earlier in this "
+            "chat:\n\n" + "\n\n----\n\n".join(blocks.values()))
 
 
 def build_messages(history: list[dict]) -> list[dict]:
@@ -328,7 +389,7 @@ def build_messages(history: list[dict]) -> list[dict]:
             '"I can only help with real-estate questions — is there a property topic '
             'I can help you with?"'
         )
-    ctx = rag_listings_context(last_user)
+    ctx = rag_listings_context(history)
     parts = [directive, REALESTATE_SYSTEM_PROMPT]
     if ctx:
         parts.append(ctx)
