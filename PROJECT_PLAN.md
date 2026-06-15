@@ -1,7 +1,7 @@
 # Project Plan & Progress — AI-Powered Real Estate Property Triage System
 
 **Owner:** Yehuda Rokach · **Type:** Individual final project · **Due:** ~2.5 weeks from 2026-06-06
-**Status:** Phases 0–4 done — WebUI (Flask) + 4 services (43 pytest) + **n8n 8-node flow validated locally** (both guardrails pass, routing verified). **Next:** demo video + ZIP packaging. **Last updated:** 2026-06-14
+**Status:** Deployed + working end-to-end on AWS EC2 (**g4dn.xlarge GPU / Tesla T4**): WebUI + 4 services + n8n + Ollama-on-GPU. Chat grounded on the Bedrock KB (Surface #5 V7); submissions ingested into the KB; dashboard + listings persisted in a volume. **Next:** demo video + ZIP packaging. **Last updated:** 2026-06-15
 
 This is the **living** project doc: it tracks decisions and progress as we build. The formal report lives in [`PROJECT_BOOK.pdf`](PROJECT_BOOK.pdf); the code lives in [`property-triage-system/`](property-triage-system/).
 
@@ -13,7 +13,7 @@ This is the **living** project doc: it tracks decisions and progress as we build
 - [x] **Phase 2 — Bedrock + microservices** ✓ — AWS profile `course` · Gemini key in Secrets Manager · **Bedrock KB** on S3 Vectors (`KB_ID=3KTFERDLUV`, 24/24) · **RAG** (:8001, Surface #3 10/10) · **Guardrails** (Bedrock Guardrail `huksxm9z68f6` + Gemini rails, :8003, Surface #4; **PII masking removed** — no email/phone fields) · **LangGraph Agent** (:8000, planner→tool_executor→synthesiser, Gemini, Surface #2 tool descriptions). All 4 services have Dockerfiles. **pytest suite: 43 tests, mocked/offline.** **2 code-review rounds applied** (XSS, error handling, fail-closed guardrail, cache safety, …).
 - [x] **Phase 3 — Image Analyser** ✓ — EfficientNet-B0 fine-tune (`train.py`); data via `prepare_data.py` (kagglehub, 500/class, 7 classes). **Rooms-only argmax 84.6% (>75% ✓)**; 7-class val 84.4%. Added a **`not_a_room` reject class** for OOD robustness. Service :8002 loads `model.pth`. See [`docs/model_card.md`](property-triage-system/docs/model_card.md). ⬜ condition-score head (placeholder for now).
 - [x] **Phase 4 — n8n flow** ✓ — 8-node flow built & validated locally (Webhook → Guardrails-In → IF → Information Extractor → AI Agent + 3 tools → LLM Chain → Guardrails-Out → Router → Respond). **Both guardrails pass; routing residential/commercial verified; spam rejected.** Captures Surfaces #1 (Extractor) + #2 (Agent + brief V1→V4). Exported to `code/n8n/n8n_flow.json`. **WebUI wired** + **deployed to EC2** (4 services via Docker Compose + IAM role, verified end-to-end).
-- [~] **Phase 5 — polish** — output-guardrail **human-review branch ✓** (output fail → held, not published); `architecture.md` ✓; remaining: full prompt-log 10-case runs
+- [x] **Phase 5 — polish** ✓ — output-guardrail human-review branch; **chat→RAG grounding (Surface #5 V7)**; image upload→S3→Image Analyser + per-photo grid; dashboard detail view + full-screen pipeline loader; required-fields lock; **full GPU deployment (g4dn / Tesla T4, Ollama ~2–3 s)**; persistent WebUI volume
 - [ ] **Phase 6 — Demo video + ZIP package** + finalize `PROJECT_BOOK.pdf`
 
 ## Decisions log
@@ -37,6 +37,11 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | 2026-06-11 | **Image: added a `not_a_room` reject class** (7th, via `prasunroy/natural-images`) | Forces an explicit "not a property photo" output instead of overconfident room guesses; fixed OOD (dog/cat/doc → `not_a_room`) |
 | 2026-06-11 | **Offline pytest suite (43 tests, all mocked)** | Re-runnable verification of every service + WebUI; needs no creds/network |
 | 2026-06-11 | **Image data via `kagglehub` + `prepare_data.py`** (500/class) | One-time local download; combines robinreni (rooms) + mikhailma street_data (exterior) + natural-images (not_a_room); Kaggle key stays local (not in AWS — nothing on EC2 reads it) |
+| 2026-06-15 | **Chat grounded on the RAG/KB** (not the local file) | One source of truth: the assistant retrieves from the same KB the pipeline uses (seeds + submissions) and survives rebuilds. Surface #5 → V7 (stable-ID refs, no self-contradiction) |
+| 2026-06-15 | **Accepted submissions ingested into the KB** | Each new listing (text incl. agent) is written to S3 + re-ingested → becomes a comparable and is visible to the chat |
+| 2026-06-15 | **WebUI image flow + extensions** | Photos upload to S3 → Image Analyser → per-photo grid; dashboard rows open a detail view; full-screen pipeline loader; Submit locked until description + agent filled |
+| 2026-06-15 | **GPU: resized to `g4dn.xlarge` (Tesla T4)** once the on-demand-G quota was approved | Ollama on GPU (NVIDIA open driver + container-toolkit) → chat ~2–3 s vs ~57 s on CPU |
+| 2026-06-15 | **Persistent volume for WebUI data** (`/data`) | Events + submitted-listing store survive container rebuilds (the KB was always durable) |
 
 ## Rubric self-assessment (filled at the final code review)
 | Criterion | Weight | Target | Actual (in progress) |
@@ -62,7 +67,7 @@ We reuse two things the student already built: `python_course/rag_app_aws/` (Bed
 > LLM generation is **Gemini** (key in AWS Secrets Manager), not Bedrock. This keeps the Bedrock footprint to the two managed services the requirement asks for.
 
 ## Architecture (4 layers)
-1. **WebUI (HTML/CSS/JS + Flask, local)** — Tab 1: Ollama (`llama3.1`) real-estate assistant that **also answers questions about the listings entered into the system** (per instructor) — relevant listings are retrieved (local store now → **RAG service / Bedrock KB** in Phase 2) and injected as grounding context; it cites the listing and never invents beyond the data. Tab 2: listing submission form → n8n webhook → renders the brief. Tab 3: monitoring dashboard (extension).
+1. **WebUI (HTML/CSS/JS + Flask)** — Tab 1: Ollama (`llama3.1`, on GPU) real-estate assistant **grounded on the RAG service / Bedrock KB** — relevant listings are retrieved each turn and injected as context; it cites listings by stable ID and never invents (Surface #5 V7). Tab 2: submission form → uploads photos to S3 + runs the Image Analyser → n8n webhook → brief + per-photo grid; accepted listings are ingested into the KB. Tab 3: monitoring dashboard with per-listing detail (persisted in a volume).
 2. **n8n orchestration** — 8 nodes: webhook → guardrails-input → IF → Information Extractor (Gemini) → AI Agent (Gemini, calls the 3 service tools) → LLM Chain (brief) → guardrails-output → Router.
 3. **4 FastAPI microservices** — RAG (8001), Image Analyser (8002), Guardrails (8003), LangGraph Agent (8000). Each its own dir + Dockerfile + requirements.txt.
 4. **External LLM + managed services** — Gemini (all generation), Bedrock KB + Guardrails, Ollama `llama3.1` (local, chat only).

@@ -86,6 +86,35 @@ function bubbleEl(role, html) {
 }
 function scrollChat() { chatWindow.scrollTop = chatWindow.scrollHeight; }
 
+// After a reply lands, show photos for any listing the assistant referenced by ID.
+// Submitted listings carry uploaded photos; seed listings (L###) don't, so their
+// /api/listing lookup 404s and we simply render nothing for them. Fire-and-forget
+// (its own try/catch per id) so a photo hiccup never disturbs the chat turn itself.
+async function attachListingPhotos(wrap, text) {
+  const bubble = wrap && wrap.querySelector(".bubble");
+  if (!bubble) return;
+  const ids = [...new Set((text.match(/SUBMITTED-\d{14}-[0-9a-f]{6}|\bL\d{2,}\b/g) || []))];
+  for (const id of ids) {
+    let d = null;
+    try { const r = await fetch("/api/listing/" + encodeURIComponent(id)); if (r.ok) d = await r.json(); } catch (_) {}
+    if (!d || !d.found || !(d.images && d.images.length)) continue;
+    const strip = document.createElement("div");
+    strip.className = "chat-photos";
+    strip.dataset.id = id;
+    strip.innerHTML =
+      `<div class="chat-photos-label">${esc(id)} · ${d.images.length} photo${d.images.length > 1 ? "s" : ""}</div>` +
+      `<div class="img-grid">` +
+      d.images.map((im) => `
+        <figure class="img-card">
+          ${im.url ? `<img src="${esc(im.url)}" alt="${esc(im.name || "")}" loading="lazy">` : `<div class="img-ph">no preview</div>`}
+          <figcaption><span class="img-room">${esc(im.room_type || "—")}</span>
+          <span class="img-meta">${im.confidence != null ? Math.round(im.confidence * 100) + "%" : ""}${im.condition_score != null ? " · cond " + im.condition_score + "/5" : ""}</span></figcaption>
+        </figure>`).join("") + `</div>`;
+    bubble.appendChild(strip);
+    scrollChat();
+  }
+}
+
 function renderSuggestions() {
   suggestionsEl.innerHTML = "";
   if (messages.length) return;
@@ -154,6 +183,7 @@ async function sendMessage(text) {
     if (acc.trim()) {
       bubble.innerHTML = mdLite(acc);
       messages.push({ role: "assistant", content: acc }); // persist only a real reply
+      attachListingPhotos(assistantWrap, acc); // show photos for referenced listings (non-blocking)
     } else {
       bubble.innerHTML = "<em>No response — please try again.</em>";
       messages.pop(); // drop the user turn so history stays clean
@@ -188,6 +218,17 @@ const submitForm = document.getElementById("submit-form");
 const resultEl = document.getElementById("result");
 let selectedFiles = [];
 let previewUrls = []; // object URLs currently shown — revoked before re-render to avoid leaks
+
+// Submit is enabled only when BOTH the description and the agent name are filled.
+const descInput = document.getElementById("desc");
+const agentInput = document.getElementById("agent");
+const submitBtnEl = document.getElementById("submit-btn");
+function syncSubmitEnabled() {
+  if (submitBtnEl) submitBtnEl.disabled = !(descInput.value.trim() && agentInput.value.trim());
+}
+if (descInput) descInput.addEventListener("input", syncSubmitEnabled);
+if (agentInput) agentInput.addEventListener("input", syncSubmitEnabled);
+syncSubmitEnabled();
 
 dropzone.addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("drag"); });
@@ -228,20 +269,67 @@ function resetSubmitForm() {
   fileInput.value = "";
   document.getElementById("desc").value = "";
   document.getElementById("agent").value = "";
+  syncSubmitEnabled();
+}
+
+/* Full-screen pipeline loader — line-art icons draw themselves + cycle, with
+   captions mirroring the n8n pipeline stages (indicative timing, not live). */
+const plOverlay = document.getElementById("pipeline-loader");
+const plIcons = plOverlay ? plOverlay.querySelectorAll(".pl-icon") : [];
+const plCaptionEl = document.getElementById("pl-caption");
+const PL_STAGES = [
+  "Validating the listing…", "Extracting the details…", "Finding comparable listings…",
+  "Analysing the photos…", "Writing the brief…", "Final safety check…", "Routing to the right team…",
+];
+let plTimer = null, plIdx = 0;
+function plStep() {
+  plIcons.forEach((s, i) => s.classList.toggle("active", i === plIdx % plIcons.length));
+  if (plCaptionEl) plCaptionEl.textContent = PL_STAGES[plIdx % PL_STAGES.length];
+  plIdx++;
+}
+function showPipelineLoader() {
+  if (!plOverlay) return;
+  plIdx = 0; plStep();
+  plOverlay.classList.remove("hidden");
+  plTimer = setInterval(plStep, 2100);
+}
+function hidePipelineLoader() {
+  if (!plOverlay) return;
+  plOverlay.classList.add("hidden");
+  if (plTimer) { clearInterval(plTimer); plTimer = null; }
 }
 
 submitForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const description = document.getElementById("desc").value.trim();
   const agent = document.getElementById("agent").value.trim();
-  if (!description) { resultEl.innerHTML = `<div class="card"><span class="pill pill-bad">Please enter a property description.</span></div>`; return; }
+  if (!description || !agent) {
+    resultEl.innerHTML = `<div class="card"><span class="pill pill-bad">Please enter both a property description and the listing agent name.</span></div>`;
+    return;
+  }
   const btn = document.getElementById("submit-btn");
   btn.disabled = true; btn.textContent = "Processing…";
+  showPipelineLoader();
   try {
+    // 1) Upload any photos to S3 + run the Image Analyser (room type + condition).
+    //    Photos are optional — a failure here never blocks the brief.
+    let images = [];
+    if (selectedFiles.length) {
+      btn.textContent = "Analysing images…";
+      try {
+        const fd = new FormData();
+        selectedFiles.forEach((f) => fd.append("images", f));
+        const ar = await fetch("/api/analyse-images", { method: "POST", body: fd });
+        const aj = await ar.json();
+        images = aj.images || [];
+      } catch (_) { images = []; }
+    }
+    // 2) Generate the brief via n8n, attaching the image analyses.
+    btn.textContent = "Processing…";
     const resp = await fetch("/api/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description, agent_name: agent, images: selectedFiles.map((f) => f.name) }),
+      body: JSON.stringify({ description, agent_name: agent, images }),
     });
     const data = await resp.json();
     renderResult(data);
@@ -251,7 +339,9 @@ submitForm.addEventListener("submit", async (e) => {
   } catch (e) {
     resultEl.innerHTML = `<div class="card"><span class="pill pill-bad">Request failed.</span></div>`;
   } finally {
-    btn.disabled = false; btn.textContent = "Submit listing";
+    hidePipelineLoader();
+    btn.textContent = "Submit listing";
+    syncSubmitEnabled();
   }
 });
 
@@ -273,9 +363,17 @@ function renderResult(d) {
   if (status === "review") pill = `<span class="pill pill-review">held for review</span>`;
 
   const guard = d.guardrail || {};
-  const imgs = tableHTML(d.images, [
-    { key: "room_type", label: "Room" }, { key: "condition_score", label: "Condition" }, { key: "confidence", label: "Confidence" },
-  ]);
+  const imgGrid = (d.images && d.images.length)
+    ? `<h3 class="chart-title" style="margin-top:18px">Image analysis</h3><div class="img-grid">` +
+      d.images.map((im) => `
+        <figure class="img-card">
+          ${im.url ? `<img src="${esc(im.url)}" alt="${esc(im.name || "")}" loading="lazy">` : `<div class="img-ph">no preview</div>`}
+          <figcaption>
+            <span class="img-room">${esc(im.room_type || "—")}</span>
+            <span class="img-meta">${im.confidence != null ? Math.round(im.confidence * 100) + "%" : ""}${im.condition_score != null ? " · cond " + im.condition_score + "/5" : ""}</span>
+          </figcaption>
+        </figure>`).join("") + `</div>`
+    : "";
   const sims = tableHTML(d.similar_listings, [
     { key: "id", label: "ID" }, { key: "text", label: "Listing" }, { key: "score", label: "Score" },
   ]);
@@ -284,7 +382,7 @@ function renderResult(d) {
     <div class="card">
       <div class="status-line"><span>Listing processed</span> ${pill}</div>
       ${d.brief_markdown ? `<div class="brief">${mdLite(d.brief_markdown)}</div>` : ""}
-      ${imgs ? `<h3 class="chart-title" style="margin-top:18px">Image analysis</h3>${imgs}` : ""}
+      ${imgGrid}
       ${sims ? `<h3 class="chart-title" style="margin-top:18px">Similar listings</h3>${sims}` : ""}
       <p class="panel-intro" style="margin-top:14px">Guardrails — input: ${passFmt(guard.input_pass)} · output: ${passFmt(guard.output_pass)} · exec: ${d.exec_ms ?? "?"} ms</p>
     </div>`;
@@ -293,6 +391,7 @@ function renderResult(d) {
 /* -------------------------- Dashboard --------------------------- */
 // chart colors are read from the active theme (CSS vars) inside loadDashboard()
 const charts = {};
+let recentRows = []; // last-10 rows currently in the dashboard table (for click-through)
 function makeChart(id, cfg) {
   if (charts[id]) charts[id].destroy();
   charts[id] = new Chart(document.getElementById(id), cfg);
@@ -342,13 +441,81 @@ async function loadDashboard() {
     options: { responsive: true, plugins: { legend: { position: "bottom" } } },
   });
 
-  document.getElementById("recent-table").innerHTML = tableHTML(d.recent, [
+  const recentEl = document.getElementById("recent-table");
+  recentEl.innerHTML = tableHTML(d.recent, [
     { key: "ts", label: "Time" }, { key: "agent", label: "Agent" }, { key: "property_type", label: "Type" },
     { key: "location", label: "Location" }, { key: "routing", label: "Team" }, { key: "status", label: "Status" },
     { key: "input_pass", label: "Input", fmt: passFmt }, { key: "output_pass", label: "Output", fmt: passFmt },
     { key: "avg_condition", label: "Avg cond." }, { key: "exec_ms", label: "ms" },
   ]);
+  // Make each data row clickable → open the listing detail modal.
+  recentRows = d.recent || [];
+  recentEl.querySelectorAll("tr").forEach((tr, i) => { if (i > 0) tr.dataset.idx = i - 1; });
 }
+
+/* ----------------------- Listing detail modal (dashboard click-through) ----------------------- */
+async function openListingModal(row) {
+  const modal = document.getElementById("listing-modal");
+  const body = document.getElementById("modal-body");
+  if (!modal || !body) return;
+  modal.classList.remove("hidden");
+  body.innerHTML = `<p class="panel-intro">Loading…</p>`;
+  let d = null;
+  if (row && row.id) {
+    try { const r = await fetch("/api/listing/" + encodeURIComponent(row.id)); if (r.ok) d = await r.json(); } catch (_) {}
+  }
+  if (!d || !d.found) {
+    const note = row.reason
+      ? `<span class="pill pill-bad">rejected</span> ${esc(row.reason)}`
+      : "No saved detail for this row.";
+    body.innerHTML = `
+      <h2 class="card-title">${esc(row.property_type && row.property_type !== "—" ? row.property_type : "Submission")}${row.location && row.location !== "—" ? " · " + esc(row.location) : ""}</h2>
+      <p class="panel-intro">${esc(row.agent || "—")} · ${esc(row.ts || "")} · ${esc(row.status || row.routing || "")}</p>
+      <p class="panel-intro">${note}</p>`;
+    return;
+  }
+  const grid = (d.images && d.images.length)
+    ? `<h3 class="chart-title" style="margin-top:14px">Photos</h3><div class="img-grid">` +
+      d.images.map((im) => `
+        <figure class="img-card">
+          ${im.url ? `<img src="${esc(im.url)}" alt="${esc(im.name || "")}" loading="lazy">` : `<div class="img-ph">no preview</div>`}
+          <figcaption><span class="img-room">${esc(im.room_type || "—")}</span>
+          <span class="img-meta">${im.confidence != null ? Math.round(im.confidence * 100) + "%" : ""}${im.condition_score != null ? " · cond " + im.condition_score + "/5" : ""}</span></figcaption>
+        </figure>`).join("") + `</div>`
+    : "";
+  body.innerHTML = `
+    <h2 class="card-title">${esc(d.property_type || "Listing")}${d.location && d.location !== "—" ? " · " + esc(d.location) : ""}</h2>
+    <p class="panel-intro">${esc(d.agent || "—")} · ${esc(d.ts || "")} · routed → ${esc(d.routing || "—")}</p>
+    ${d.description ? `<h3 class="chart-title" style="margin-top:14px">Description</h3><p dir="auto">${esc(d.description)}</p>` : ""}
+    ${d.brief_markdown ? `<h3 class="chart-title" style="margin-top:14px">Brief</h3><div class="brief">${mdLite(d.brief_markdown)}</div>` : ""}
+    ${grid}`;
+}
+function closeListingModal() {
+  const m = document.getElementById("listing-modal");
+  if (m) m.classList.add("hidden");
+}
+(function () {
+  const modal = document.getElementById("listing-modal");
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target.dataset.close !== undefined || e.target.id === "modal-close") closeListingModal();
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeListingModal(); });
+  }
+  const recentEl = document.getElementById("recent-table");
+  if (recentEl) recentEl.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr");
+    if (!tr || tr.dataset.idx === undefined) return;
+    const row = recentRows[+tr.dataset.idx];
+    if (row) openListingModal(row);
+  });
+  // A photo strip in the chat opens the same detail modal as the dashboard.
+  if (chatWindow) chatWindow.addEventListener("click", (e) => {
+    const strip = e.target.closest(".chat-photos");
+    if (strip && strip.dataset.id) openListingModal({ id: strip.dataset.id });
+  });
+})();
+
 
 /* ----------------------------- Theme palette switcher ----------------------------- */
 (function () {

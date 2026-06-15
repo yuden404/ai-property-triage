@@ -8,6 +8,47 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* Disabled Submit button — visible lock until description + agent are filled */
+    .btn:disabled, .btn[disabled] { opacity: .5; cursor: not-allowed; filter: none; transform: none; box-shadow: none; }
+    /* Image-analysis grid (Submit result) */
+    .img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:8px}
+    .img-card{margin:0;border:1px solid var(--line,#e4ddcf);border-radius:12px;overflow:hidden;background:var(--card,#fff)}
+    .img-card img{display:block;width:100%;height:120px;object-fit:cover}
+    .img-card .img-ph{height:120px;display:flex;align-items:center;justify-content:center;color:#999;font-size:.8rem}
+    .img-card figcaption{padding:8px 10px}
+    .img-room{display:block;font-weight:600;text-transform:capitalize}
+    .img-meta{display:block;font-size:.78rem;color:var(--muted,#8a8170);margin-top:2px}
+    /* photo strip under a chat reply (referenced listings) */
+    .chat-photos{margin-top:10px;cursor:pointer}
+    .chat-photos-label{font-size:.78rem;font-weight:600;color:var(--muted,#8a8170);margin-bottom:6px}
+    .chat-photos .img-grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:0}
+    .chat-photos .img-card img,.chat-photos .img-card .img-ph{height:72px}
+    .chat-photos .img-card figcaption{padding:5px 7px}
+    .chat-photos .img-meta{font-size:.7rem}
+    /* Listing detail modal (dashboard click-through) */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:50}
+    .modal.hidden{display:none}
+    .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.5)}
+    .modal-panel{position:relative;background:var(--card,#fff);max-width:680px;width:92%;max-height:85vh;overflow:auto;border-radius:16px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .modal-close{position:absolute;top:12px;right:14px;border:none;background:transparent;font-size:1.1rem;cursor:pointer;color:var(--muted,#888)}
+    #recent-table tr[data-idx]{cursor:pointer}
+    #recent-table tr[data-idx]:hover{background:rgba(0,0,0,.05)}
+    /* Pipeline loader — full-screen while a listing goes through n8n */
+    .pl-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(18,16,12,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+    .pl-overlay.hidden{display:none}
+    .pl-box{display:flex;flex-direction:column;align-items:center;gap:24px;color:#fff;text-align:center}
+    .pl-stage{position:relative;width:140px;height:140px}
+    .pl-icon{position:absolute;inset:0;width:140px;height:140px;color:#fff;opacity:0;transform:scale(.94);transition:opacity .55s ease,transform .55s ease}
+    .pl-icon.active{opacity:1;transform:scale(1)}
+    .pl-icon path,.pl-icon circle,.pl-icon polyline{fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1}
+    .pl-icon.active path,.pl-icon.active circle,.pl-icon.active polyline{animation:pl-draw 1.3s ease forwards}
+    @keyframes pl-draw{to{stroke-dashoffset:0}}
+    .pl-caption{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.06rem;letter-spacing:.2px;min-height:1.4em;opacity:.96}
+    .pl-bar{width:210px;height:3px;background:rgba(255,255,255,.22);border-radius:999px;overflow:hidden}
+    .pl-bar i{display:block;height:100%;width:38%;background:#fff;border-radius:999px;animation:pl-slide 1.5s ease-in-out infinite}
+    @keyframes pl-slide{0%{transform:translateX(-130%)}100%{transform:translateX(360%)}}
+  </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
@@ -128,9 +169,9 @@
                 <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
               </div>
               <div id="previews" class="previews"></div>
-              <label class="field-label" for="agent">Listing agent name</label>
+              <label class="field-label" for="agent">Listing agent name <span class="req">*</span></label>
               <input id="agent" type="text" placeholder="e.g. Dana Levi">
-              <button type="submit" class="btn btn-dark" id="submit-btn">Submit listing</button>
+              <button type="submit" class="btn btn-dark" id="submit-btn" disabled>Submit listing</button>
             </form>
           </div>
           <div id="result" class="result"></div>
@@ -153,6 +194,27 @@
     </main>
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <div id="pipeline-loader" class="pl-overlay hidden" aria-hidden="true">
+    <div class="pl-box">
+      <div class="pl-stage">
+        <svg class="pl-icon active" viewBox="0 0 100 100"><path pathLength="1" d="M16 52 L50 24 L84 52"/><path pathLength="1" d="M26 48 V80 H74 V48"/><path pathLength="1" d="M44 80 V62 H56 V80"/></svg>
+        <svg class="pl-icon" viewBox="0 0 100 100"><path pathLength="1" d="M30 20 H70 V82 H30 Z"/><path pathLength="1" d="M38 30 H46 M54 30 H62 M38 42 H46 M54 42 H62 M38 54 H46 M54 54 H62"/><path pathLength="1" d="M46 82 V68 H54 V82"/></svg>
+        <svg class="pl-icon" viewBox="0 0 100 100"><path pathLength="1" d="M34 14 H66 V84 H34 Z"/><path pathLength="1" d="M44 14 V84 M56 14 V84"/><path pathLength="1" d="M34 30 H66 M34 46 H66 M34 62 H66"/></svg>
+        <svg class="pl-icon" viewBox="0 0 100 100"><circle pathLength="1" cx="38" cy="40" r="15"/><path pathLength="1" d="M49 51 L78 80"/><path pathLength="1" d="M70 72 L78 64 M62 64 L70 56"/></svg>
+      </div>
+      <div class="pl-caption" id="pl-caption">Validating the listing…</div>
+      <div class="pl-bar"><i></i></div>
+    </div>
+  </div>
+
+  <div id="listing-modal" class="modal hidden">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js', v='5') }}"></script>
 </body>
 </html>

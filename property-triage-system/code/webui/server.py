@@ -13,12 +13,13 @@ import os
 import re
 import threading
 import time
+import uuid
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 import requests
-from flask import Flask, Response, jsonify, render_template, request, stream_with_context
+from flask import Flask, Response, jsonify, make_response, render_template, request, stream_with_context
 
 from system_prompts import REALESTATE_SYSTEM_PROMPT
 
@@ -39,12 +40,125 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "").strip()
 USE_MOCK = not N8N_WEBHOOK_URL
 
 MOCK_BRIEF = HERE / "mock_brief.json"
-EVENTS_LOG = HERE / "events.jsonl"
+# Real submissions live in a mounted volume (DATA_DIR) so they survive container
+# rebuilds; the sample/demo files stay baked into the image (read-only).
+DATA_DIR = Path(os.getenv("DATA_DIR", str(HERE)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+EVENTS_LOG = DATA_DIR / "events.jsonl"
 SAMPLE_EVENTS = HERE / "sample_events.jsonl"
-LISTINGS_STORE = HERE / "listings.jsonl"
+LISTINGS_STORE = DATA_DIR / "listings.jsonl"
 SAMPLE_LISTINGS = HERE / "sample_listings.jsonl"
 
+# Image upload + analysis (Service 2). The WebUI uploads photos to S3 and calls
+# the Image Analyser directly, so every uploaded photo is classified and shown.
+IMAGE_URL = os.getenv("IMAGE_URL", "http://localhost:8002").rstrip("/")
+RAG_URL = os.getenv("RAG_URL", "http://localhost:8001").rstrip("/")
+UPLOAD_BUCKET = os.getenv("UPLOAD_BUCKET", "").strip()
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+# Bedrock Knowledge Base — accepted listings are ingested so they become
+# permanent RAG comparables (the KB itself lives in S3 + OpenSearch).
+KB_ID = os.getenv("KB_ID", "").strip()
+KB_DATA_SOURCE_ID = os.getenv("KB_DATA_SOURCE_ID", "").strip()
+
+# DynamoDB — durable system-of-record for submitted listings + dashboard events.
+# Survives container rebuilds (the volume did not). The KB stays the search index;
+# DynamoDB holds the full records incl. photo S3 keys. Unset → fall back to local
+# JSONL (so local dev / the offline test suite need no AWS).
+DDB_LISTINGS_TABLE = os.getenv("DDB_LISTINGS_TABLE", "").strip()
+DDB_EVENTS_TABLE = os.getenv("DDB_EVENTS_TABLE", "").strip()
+
 app = Flask(__name__)
+
+_s3_client = None
+
+
+def s3():
+    """Lazy S3 client — credentials come from the instance role on EC2 (boto3's
+    default chain), so there are no keys in code or env."""
+    global _s3_client
+    if _s3_client is None:
+        import boto3
+
+        _s3_client = boto3.client("s3", region_name=AWS_REGION)
+    return _s3_client
+
+
+def public_url(key: str) -> str:
+    """Permanent public URL for an uploaded photo. The `uploads/` prefix is granted
+    public read by the bucket policy, so these links never expire — no presigning,
+    nothing to refresh. (Only `uploads/` is public; the KB text under `listings/`
+    stays private.)"""
+    from urllib.parse import quote
+
+    return f"https://{UPLOAD_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{quote(key, safe='/')}"
+
+
+_bedrock_agent_client = None
+
+
+def bedrock_agent():
+    """Lazy bedrock-agent client (KB ingestion). Instance role provides creds."""
+    global _bedrock_agent_client
+    if _bedrock_agent_client is None:
+        import boto3
+
+        _bedrock_agent_client = boto3.client("bedrock-agent", region_name=AWS_REGION)
+    return _bedrock_agent_client
+
+
+_ddb_client = None
+
+
+def ddb():
+    """Lazy DynamoDB client (durable record store). Instance role provides creds."""
+    global _ddb_client
+    if _ddb_client is None:
+        import boto3
+
+        _ddb_client = boto3.client("dynamodb", region_name=AWS_REGION)
+    return _ddb_client
+
+
+def _ddb_put_doc(table: str, doc: dict) -> None:
+    """Store a record as a JSON document under its `id`, with a top-level `ts` for
+    chronological ordering. Storing the whole record as a JSON string sidesteps
+    DynamoDB's float/Decimal marshalling (condition scores, exec_ms) entirely."""
+    key = str(doc.get("id") or uuid.uuid4().hex)
+    ddb().put_item(TableName=table, Item={
+        "id": {"S": key},
+        "ts": {"S": str(doc.get("ts") or "")},
+        "doc": {"S": json.dumps(doc, ensure_ascii=False)},
+    })
+
+
+def _ddb_all_docs(table: str) -> list[dict]:
+    """Scan every record (low volume) and return them sorted by `ts` ascending —
+    the same append order the JSONL store used to give."""
+    docs = []
+    for page in ddb().get_paginator("scan").paginate(TableName=table):
+        for it in page.get("Items", []):
+            raw = it.get("doc", {}).get("S")
+            if not raw:
+                continue
+            try:
+                docs.append(json.loads(raw))
+            except json.JSONDecodeError:
+                pass
+    docs.sort(key=lambda d: d.get("ts") or "")
+    return docs
+
+
+def _ddb_get_doc(table: str, key: str) -> dict | None:
+    raw = (ddb().get_item(TableName=table, Key={"id": {"S": key}}).get("Item") or {}).get("doc", {}).get("S")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -86,13 +200,16 @@ def _read_jsonl_cached(path: Path, cache: dict) -> list[dict]:
 
 
 def load_events() -> tuple[list[dict], bool]:
-    real = _read_jsonl_cached(EVENTS_LOG, _events_cache)
-    return (real, False) if real else (_read_jsonl(SAMPLE_EVENTS), True)
+    # DynamoDB is the durable source of truth; the seeded demo events stay baked
+    # into the image and are shown first. is_sample is True only while there are
+    # no real submissions yet.
+    real = _ddb_all_docs(DDB_EVENTS_TABLE) if DDB_EVENTS_TABLE else _read_jsonl_cached(EVENTS_LOG, _events_cache)
+    return _read_jsonl(SAMPLE_EVENTS) + real, not real
 
 
 def load_listings() -> tuple[list[dict], bool]:
-    real = _read_jsonl_cached(LISTINGS_STORE, _listings_cache)
-    return (real, False) if real else (_read_jsonl(SAMPLE_LISTINGS), True)
+    real = _ddb_all_docs(DDB_LISTINGS_TABLE) if DDB_LISTINGS_TABLE else _read_jsonl_cached(LISTINGS_STORE, _listings_cache)
+    return _read_jsonl(SAMPLE_LISTINGS) + real, not real
 
 
 def listings_context(limit: int = 15) -> str:
@@ -111,30 +228,48 @@ def listings_context(limit: int = 15) -> str:
     )
 
 
-def save_listing(agent: str, description: str, images: list[str], result: dict) -> None:
+def _extracted_field(extracted: dict, key: str) -> str:
+    """Pull a field from the Information Extractor output. n8n's langchain
+    Information Extractor nests its attributes under 'output' (same shape the
+    Router reads as output.routing), so check the top level and 'output'."""
+    if not isinstance(extracted, dict):
+        return "—"
+    nested = extracted.get("output") if isinstance(extracted.get("output"), dict) else {}
+    return extracted.get(key) or nested.get(key) or "—"
+
+
+def save_listing(agent: str, description: str, images: list, result: dict, listing_id: str = "") -> None:
     extracted = result.get("extracted", {}) or {}
     rec = {
+        "id": listing_id,
         "ts": datetime.now().isoformat(timespec="seconds"),
         "agent": agent or "—",
-        "property_type": extracted.get("property_type", "—"),
-        "location": extracted.get("location", "—"),
+        "property_type": _extracted_field(extracted, "property_type"),
+        "location": _extracted_field(extracted, "location"),
+        "routing": result.get("routing", "—"),
+        "status": result.get("status", "ok"),
         "description": description,
+        "brief_markdown": result.get("brief_markdown", ""),
         "images": images,
     }
-    with LISTINGS_STORE.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec) + "\n")
+    if DDB_LISTINGS_TABLE:
+        _ddb_put_doc(DDB_LISTINGS_TABLE, rec)
+    else:
+        with LISTINGS_STORE.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
 
 
-def log_event(agent: str, result: dict) -> None:
+def log_event(agent: str, result: dict, listing_id: str = "") -> None:
     imgs = result.get("images", []) or []
     conds = [i.get("condition_score") for i in imgs if isinstance(i.get("condition_score"), (int, float))]
     guard = result.get("guardrail", {}) or {}
     extracted = result.get("extracted", {}) or {}
     event = {
+        "id": listing_id,
         "ts": datetime.now().isoformat(timespec="seconds"),
         "agent": agent or "—",
-        "property_type": extracted.get("property_type", "—"),
-        "location": extracted.get("location", "—"),
+        "property_type": _extracted_field(extracted, "property_type"),
+        "location": _extracted_field(extracted, "location"),
         "status": result.get("status", "ok"),
         "routing": result.get("routing", "—"),
         "avg_condition": round(sum(conds) / len(conds), 2) if conds else None,
@@ -142,13 +277,43 @@ def log_event(agent: str, result: dict) -> None:
         "output_pass": guard.get("output_pass"),
         "exec_ms": result.get("exec_ms"),
     }
-    with EVENTS_LOG.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(event) + "\n")
+    if DDB_EVENTS_TABLE:
+        _ddb_put_doc(DDB_EVENTS_TABLE, event)
+    else:
+        with EVENTS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
 
 
 # --------------------------------------------------------------------------- #
 # Ollama (Assistant)
 # --------------------------------------------------------------------------- #
+def rag_listings_context(query: str) -> str:
+    """Ground the chat on the RAG/KB: retrieve listings relevant to the question so the
+    assistant can answer about the whole corpus (seed comparables + every accepted
+    submission) — persistent across rebuilds. Falls back to the local store only if the
+    RAG service is unreachable."""
+    if query.strip():
+        try:
+            r = requests.post(f"{RAG_URL}/query",
+                              json={"description": query, "with_insight": False}, timeout=20)
+            r.raise_for_status()
+            hits = r.json().get("similar_listings", []) or []
+            if hits:
+                # Present each listing by its real ID/title (the text already starts
+                # "Listing <ID>: <title>"). NO positional "Listing 1/2/3" — the set is
+                # re-retrieved each turn, so position numbers are unstable and made the
+                # model contradict itself.
+                blocks = [(h.get("text") or "").strip() for h in hits]
+                return ("PROPERTY LISTINGS RETRIEVED FROM THE KNOWLEDGE BASE for this question. "
+                        "Refer to each property by its ID (e.g. L015) or title, NEVER by a position "
+                        "number. Discuss ONLY the properties below; if asked about one not listed "
+                        "here, say you don't have it — do not contradict an earlier answer:\n\n"
+                        + "\n\n----\n\n".join(blocks))
+        except requests.exceptions.RequestException:
+            pass
+    return listings_context()  # fallback: local store if the RAG service is unreachable
+
+
 def build_messages(history: list[dict]) -> list[dict]:
     """System prompt + per-turn language directive + the listings context."""
     last_user = next((m.get("content", "") for m in reversed(history) if m.get("role") == "user"), "")
@@ -163,7 +328,7 @@ def build_messages(history: list[dict]) -> list[dict]:
             '"I can only help with real-estate questions — is there a property topic '
             'I can help you with?"'
         )
-    ctx = listings_context()
+    ctx = rag_listings_context(last_user)
     parts = [directive, REALESTATE_SYSTEM_PROMPT]
     if ctx:
         parts.append(ctx)
@@ -223,11 +388,60 @@ def submit_listing(payload: dict) -> tuple[dict, int]:
 
 
 # --------------------------------------------------------------------------- #
+# Bedrock KB ingestion — accepted listings become permanent RAG comparables
+# --------------------------------------------------------------------------- #
+def _kb_text(listing_id: str, description: str, result: dict, agent: str = "") -> str:
+    """Format an accepted listing to match the seeded corpus (Type/Location/…)."""
+    ex = result.get("extracted", {}) or {}
+    ptype = _extracted_field(ex, "property_type")
+    loc = _extracted_field(ex, "location")
+    feats = _extracted_field(ex, "key_features")
+    if isinstance(feats, list):
+        feats = ", ".join(str(x) for x in feats)
+    heading = re.search(r"^#+\s*(.+)$", result.get("brief_markdown", "") or "", re.M)
+    if heading:
+        title = heading.group(1).strip()
+    elif ptype != "—":
+        title = f"{ptype} in {loc}"
+    else:
+        title = "Submitted listing"
+    return "\n".join([
+        f"Listing {listing_id}: {title}",
+        f"Listing agent: {agent or 'N/A'}",
+        f"Type: {ptype}",
+        f"Location: {loc}",
+        f"Price: {_extracted_field(ex, 'price')}",
+        f"Rooms: {_extracted_field(ex, 'num_rooms')}",
+        f"Features: {feats}",
+        f"Description: {description}",
+    ])
+
+
+def ingest_listing_to_kb(listing_id: str, description: str, result: dict, agent: str = "") -> None:
+    """Upload the listing text to the KB's S3 data source and start ingestion,
+    so it becomes a retrievable comparable. Best-effort: a ConflictException
+    (a sync already running) is fine — the file is in S3 for the next sync."""
+    if not (UPLOAD_BUCKET and KB_ID and KB_DATA_SOURCE_ID):
+        return
+    try:
+        s3().put_object(
+            Bucket=UPLOAD_BUCKET, Key=f"listings/{listing_id}.txt",
+            Body=_kb_text(listing_id, description, result, agent).encode("utf-8"),
+            ContentType="text/plain",
+        )
+        bedrock_agent().start_ingestion_job(knowledgeBaseId=KB_ID, dataSourceId=KB_DATA_SOURCE_ID)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
-    return render_template("index.html", mock=USE_MOCK, model=OLLAMA_MODEL)
+    resp = make_response(render_template("index.html", mock=USE_MOCK, model=OLLAMA_MODEL))
+    resp.headers["Cache-Control"] = "no-store"  # always serve fresh HTML (no stale UI after deploys)
+    return resp
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -246,6 +460,52 @@ def api_chat():
     return Response(stream_with_context(iter_ollama_chunks(resp)), mimetype="text/plain; charset=utf-8")
 
 
+@app.route("/api/analyse-images", methods=["POST"])
+def api_analyse_images():
+    """Upload each photo to S3 and run the Image Analyser on it. Returns one
+    object per image with the S3 location + room type / condition / confidence.
+    Photos are optional, so a per-image failure is reported, never fatal."""
+    files = request.files.getlist("images")
+    if not files:
+        return jsonify({"images": []})
+    if not UPLOAD_BUCKET:
+        return jsonify({"error": "Image uploads are not configured."}), 503
+    client = s3()
+    out = []
+    for f in files:
+        if (f.mimetype or "") not in ALLOWED_IMAGE_TYPES:
+            continue
+        data = f.read()
+        if len(data) > MAX_IMAGE_BYTES:
+            out.append({"name": f.filename, "room_type": "error", "note": "file too large (>8MB)"})
+            continue
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", f.filename or "image")
+        key = f"uploads/{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}-{safe}"
+        try:
+            client.put_object(Bucket=UPLOAD_BUCKET, Key=key, Body=data, ContentType=f.mimetype)
+            url = public_url(key)  # permanent (uploads/ is public) — never expires
+        except Exception as exc:  # S3 misconfig / perms — report, keep going
+            out.append({"name": f.filename, "room_type": "error", "note": f"upload failed: {exc}"})
+            continue
+        analysis = {"room_type": None, "condition_score": None, "confidence": None}
+        try:
+            r = requests.post(f"{IMAGE_URL}/analyse", json={"image_url": url}, timeout=40)
+            r.raise_for_status()
+            analysis = r.json()
+        except requests.exceptions.RequestException as exc:
+            analysis = {"room_type": "error", "condition_score": None,
+                        "confidence": None, "note": str(exc)[:160]}
+        out.append({
+            "name": f.filename,
+            "s3_key": key,
+            "url": url,
+            "room_type": analysis.get("room_type"),
+            "condition_score": analysis.get("condition_score"),
+            "confidence": analysis.get("confidence"),
+        })
+    return jsonify({"images": out})
+
+
 @app.route("/api/submit", methods=["POST"])
 def api_submit():
     body = request.get_json(silent=True) or {}
@@ -253,17 +513,28 @@ def api_submit():
     if not description:
         return jsonify({"error": "Property description is required."}), 400
     agent_name = (body.get("agent_name") or "").strip()
+    if not agent_name:
+        return jsonify({"error": "Listing agent name is required."}), 400
+    # images = the analysis objects from /api/analyse-images (or bare filenames).
     images = body.get("images") or []
-    payload = {"description": description, "images": images, "agent_name": agent_name}
+    image_names = [(im.get("name") if isinstance(im, dict) else im) for im in images]
+    payload = {"description": description, "images": image_names, "agent_name": agent_name}
     try:
         result, _ = submit_listing(payload)
     except requests.exceptions.RequestException as exc:
         return jsonify({"error": f"Couldn't reach the n8n webhook: {exc}"}), 502
+    # The photo analyses were computed here (S3 + Image Analyser), not by n8n —
+    # attach them so the result grid and the dashboard condition stats see them.
+    if images and isinstance(images[0], dict):
+        result["images"] = images
+    listing_id = f"SUBMITTED-{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
+    result["id"] = listing_id
     # Log every event (incl. rejected) for the dashboard, but only feed ACCEPTED
-    # listings into the chat's grounding store — never persist rejected/spam input.
-    log_event(agent_name, result)
+    # listings into the chat store + the Knowledge Base — never persist rejected input.
+    log_event(agent_name, result, listing_id)
     if result.get("status") != "rejected":
-        save_listing(agent_name, description, images, result)
+        save_listing(agent_name, description, images, result, listing_id)
+        ingest_listing_to_kb(listing_id, description, result, agent_name)  # → permanent RAG comparable
     # brief_markdown is rendered safely client-side (mdLite escapes HTML) — no raw
     # HTML is generated server-side, closing the stored-XSS vector.
     return jsonify(result)
@@ -296,6 +567,34 @@ def api_dashboard():
         ],
         recent=list(reversed(events))[:10],
     )
+
+
+@app.route("/api/listing/<lid>")
+def api_listing(lid):
+    """Full detail for one listing (dashboard click-through): description, brief,
+    and photos as permanent public URLs (the uploads/ prefix is public-read)."""
+    if DDB_LISTINGS_TABLE:
+        rec = _ddb_get_doc(DDB_LISTINGS_TABLE, lid)
+    else:
+        items, _ = load_listings()
+        rec = next((x for x in reversed(items) if x.get("id") == lid), None)
+    if not rec:
+        return jsonify({"found": False}), 404
+    images = []
+    for im in (rec.get("images") or []):
+        if not isinstance(im, dict):
+            continue
+        url, key = im.get("url"), im.get("s3_key")
+        if key and UPLOAD_BUCKET:
+            url = public_url(key)  # permanent public URL (uploads/ is public)
+        images.append({"name": im.get("name"), "url": url, "room_type": im.get("room_type"),
+                       "condition_score": im.get("condition_score"), "confidence": im.get("confidence")})
+    return jsonify({
+        "found": True, "id": lid, "ts": rec.get("ts"), "agent": rec.get("agent"),
+        "property_type": rec.get("property_type"), "location": rec.get("location"),
+        "routing": rec.get("routing"), "description": rec.get("description"),
+        "brief_markdown": rec.get("brief_markdown", ""), "images": images,
+    })
 
 
 if __name__ == "__main__":

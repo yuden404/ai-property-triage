@@ -3,8 +3,11 @@
 ## Overview
 A multi-modal real-estate listing-triage pipeline. A listing (text + images) is
 validated, enriched by an agent that calls specialised services, turned into a
-publishable brief, re-checked, and routed. Plus a conversational assistant over
-the listings in the system.
+publishable brief, re-checked, and routed. Uploaded photos are classified by the
+Image Analyser, and accepted listings are ingested back into the Knowledge Base.
+Plus a conversational assistant **grounded on the Knowledge Base** (it retrieves the
+listings relevant to each question, by stable ID). The whole stack runs on one
+**GPU EC2 instance** (`g4dn.xlarge` / Tesla T4 — Ollama on the GPU).
 
 ```
                          ┌──────────────────────────────────────────────┐
@@ -37,7 +40,7 @@ the listings in the system.
 
 | Service | Port | Endpoint | Stack |
 |---------|------|----------|-------|
-| RAG | 8001 | `POST /query` → `{similar_listings, insight}` | Bedrock KB (S3 Vectors) retrieve + Gemini cited insight |
+| RAG | 8001 | `POST /query` → `{similar_listings, insight}` | Bedrock KB (S3 Vectors) retrieve + Gemini cited insight; `retrieve-only` mode for the chat; accepted submissions ingested back into the KB |
 | Image Analyser | 8002 | `POST /analyse` → `{room_type, condition_score, confidence}` | EfficientNet-B0 (7-class) |
 | Guardrails | 8003 | `POST /check/input` `/check/output` → `{pass, reason, safe_text}` | Bedrock ApplyGuardrail + Gemini classifier/auditor |
 | LangGraph Agent | 8000 | `POST /agent/run` → `{answer, tools_used, reasoning_steps}` | LangGraph (planner→tool_executor→synthesiser), Gemini, calls RAG + Image |

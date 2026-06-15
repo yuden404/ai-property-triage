@@ -40,11 +40,13 @@ _runtime = client("bedrock-agent-runtime")
 
 class QueryRequest(BaseModel):
     description: str
+    with_insight: bool = True
 
 
 def _listing_id(text: str) -> str:
-    """Extract the listing id from the document text ('Listing L007: …')."""
-    m = re.match(r"Listing\s+(L\d+)", text)
+    """Extract the listing id from the document text ('Listing L007:' or
+    'Listing SUBMITTED-20260615...:')."""
+    m = re.match(r"Listing\s+([\w-]+)", text)
     return m.group(1) if m else "unknown"
 
 
@@ -78,6 +80,11 @@ def query(req: QueryRequest):
     ]
     if not similar:
         return {"similar_listings": [], "insight": "No comparable listings found in the knowledge base."}
+
+    # The chat grounds on the retrieved listings only — skip the slower, paid Gemini
+    # insight it doesn't use (the submission pipeline keeps with_insight=True).
+    if not req.with_insight:
+        return {"similar_listings": similar, "insight": ""}
 
     context = "\n\n".join(f"[{s['id']}] (similarity {s['score']})\n{s['text']}" for s in similar)
     try:

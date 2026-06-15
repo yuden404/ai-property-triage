@@ -16,7 +16,7 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 | 2 | n8n AI Agent | agent system prompt + tool descriptions + brief (Gemini) | ✅ 10/10 end-to-end + brief V1→V4 |
 | 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ✅ V1 = 10/10 |
 | 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
-| 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V6 = 10/10 |
+| 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V7 = 10/10 |
 | 6 | LangGraph Agent tool descriptions | Service 4 — planner tool-routing descriptions (Gemini) | ✅ V1 = 9/10 routing |
 
 ---
@@ -241,6 +241,9 @@ Rules:
 
 ### V6 — Listings-aware (requirement change, 2026-06-09)
 The instructor clarified the assistant must also **answer questions about the listings entered into the system** (submit in one tab, ask about them in the chat). Changes: (a) submitted listings are persisted (`listings.jsonl`) and injected as grounding context into the chat (`build_messages` → `listings_context()`); (b) rule 1 was relaxed to **allow quoting facts present in the provided listings** (price, location, features, condition) while still forbidding invented data and URLs; (c) added a "listings" capability bullet + listings-oriented suggested questions. Verified on `llama3.1`: *"which listings need renovation?"* → cites Listing 3 (and Listing 1); *"price of the Tel Aviv office?"* → 4,200,000 ILS (Listing 2); a Hebrew query about Ramat Gan answered from the data; off-topic ("tell me a joke") still refused. **Phase 2 seam:** the context source switches from the local file to the **Bedrock Knowledge Base (RAG service)**.
+
+### V7 — RAG-grounded + stable IDs (2026-06-15)
+The grounding source was switched from the local `listings.jsonl` to the **Bedrock Knowledge Base** (the RAG service, `with_insight=false` retrieve-only): each turn retrieves the listings relevant to the question, so the assistant answers about the **whole corpus** (the ≥20 seed comparables + every accepted submission) and survives container rebuilds. **Failure fixed:** the WebUI context numbered the retrieved listings "Listing 1/2/3" and rule 1 said "cite the listing number" — but the set is re-retrieved every turn, so positions were unstable and the model **contradicted itself** (turn 1: *"Listing 3 = L015 needs renovation"*; turn 2: *"Listing 3 isn't present"*). **Change:** (a) the RAG context now presents each listing by its **stable ID/title** (`L015`, `SUBMITTED-…`) with no position number; (b) rule 1 now says: refer to listings **by ID, never by position**, discuss **only** the retrieved listings, and **never contradict** an earlier answer. **Verified** on `llama3.1` (GPU) across two turns: *"which listings need renovation?"* → cites `L015` + `SUBMITTED-…` by ID; *"what is L015?"* → consistent, **no contradiction**; automated check: 0 positional refs, real IDs present. **Pass rate held at 10/10.**
 
 ---
 

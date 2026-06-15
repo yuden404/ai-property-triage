@@ -7,7 +7,7 @@
 **Author:** Yehuda Rokach
 **Project type:** Individual final project
 **Date:** June 2026
-**Status:** Phases 0–3 complete — WebUI + 4 microservices built, trained, and tested; n8n orchestration + EC2 deployment remaining
+**Status:** Complete and deployed — WebUI + 4 microservices + n8n orchestration live on a GPU EC2 instance (`g4dn.xlarge` / NVIDIA Tesla T4), verified end-to-end; image classifier at 84.6% room-type accuracy; assistant chat grounded on the Bedrock Knowledge Base.
 
 </div>
 
@@ -32,7 +32,7 @@ This project designs and builds a production-style, multi-modal AI system that a
 
 The system is assembled from managed and reusable building blocks rather than hand-rolled from scratch: **Amazon Bedrock Knowledge Bases** for retrieval, **Amazon Bedrock Guardrails** for safety, **Google Gemini** for all LLM generation, a **PyTorch** transfer-learning model for image analysis, **n8n** for orchestration, and a **Flask + Ollama** web interface.
 
-As of this revision, the WebUI, all four microservices (RAG, Image Analyser, Guardrails, LangGraph Agent) — covered by a 43-test offline suite — and the **n8n 8-node orchestration flow** are built and validated; the image classifier reaches **84.6%** room-type accuracy on fresh images, and the full pipeline passes both guardrails with correct residential/commercial routing — verified end-to-end from the WebUI through n8n and back. EC2 deployment remains.
+The full system is **deployed and running on AWS EC2** (a `g4dn.xlarge` GPU instance) and verified end-to-end: the WebUI, all four microservices (RAG, Image Analyser, Guardrails, LangGraph Agent) — covered by a 43-test offline suite — and the **n8n 8-node orchestration flow**. The image classifier reaches **84.6%** room-type accuracy on fresh images; the full pipeline passes both guardrails with correct residential/commercial routing; and the assistant chat is **grounded on the Bedrock Knowledge Base** and runs on the GPU (~2–3 s per response).
 
 ## 2. Introduction & Real-World Scenario
 A real-estate agency receives dozens of new property submissions every day, each a written description plus photographs. Staff must check the submission is genuine (not spam/off-topic), identify property type/condition/features, score the uploaded images, find similar past listings, route the listing to residential vs. commercial teams, and produce a clean published brief.
@@ -44,7 +44,7 @@ This is a realistic, multi-modal workflow: it combines text understanding, image
 ## 3. System Architecture
 The system has four layers, each communicating with the next over HTTP.
 
-**Layer 1 — Web UI (HTML/CSS/JS + Flask, local).** Two working surfaces plus a monitoring extension: (a) a conversational assistant backed by a **local Ollama** server running Llama 3.1, grounded as a real-estate assistant; (b) a listing submission form that POSTs to the n8n webhook and renders the returned brief; (c) a monitoring dashboard with live processing stats (Chart.js). Built as a custom Flask app (instructor permits) for full design control; all the Python logic is shared.
+**Layer 1 — Web UI (HTML/CSS/JS + Flask).** Two working surfaces plus a monitoring extension: (a) a conversational assistant backed by an **Ollama** Llama 3.1 server (on the instance GPU), **grounded on the Bedrock Knowledge Base** — each turn retrieves the relevant listings (seed comparables + submissions) and answers about them by stable ID; (b) a listing submission form that uploads photos to **S3**, runs them through the Image Analyser, POSTs to the n8n webhook (behind a full-screen pipeline loader), and renders the brief plus a per-photo room/condition grid; (c) a monitoring dashboard (Chart.js) whose rows open a per-listing detail view. Built as a custom Flask app (instructor permits) for full design control.
 
 **Layer 2 — n8n orchestration.** An 8-node flow: webhook trigger → guardrails input check → IF (pass/fail) → Information Extractor (Gemini) → AI Agent (Gemini; dispatches tool calls to the services) → LLM Chain (final brief) → guardrails output check → router (residential vs. commercial).
 
@@ -82,10 +82,10 @@ This project intentionally **assembles managed services** instead of hand-rollin
 ## 5. Component Design
 
 ### 5.1 Web UI (built first)
-A 3-tab app served by **Flask** with a vanilla HTML/CSS/JS frontend. **Assistant** tab streams chat from the local Ollama `/api/chat` endpoint with a real-estate system prompt that refuses off-topic questions, gives no legal advice, and invents no prices (prompt surface #5). **Submit Listing** tab posts the description, images, and agent name to the n8n webhook and renders the returned brief, image condition scores, and similar listings. **Dashboard** tab shows live stats (Chart.js) from a local event log. During early development the submit tab is tested against a mock brief so the whole UI is demoable before n8n exists.
+A 3-tab app served by **Flask** with a vanilla HTML/CSS/JS frontend. **Assistant** tab streams chat from the Ollama `/api/chat` endpoint (GPU), **grounded on the RAG service / Bedrock KB** — it retrieves the listings relevant to each question and answers about them by stable ID, refuses off-topic questions, and invents nothing (prompt surface #5, V7). **Submit Listing** tab uploads photos to **S3**, calls the **Image Analyser** on each, posts the description + agent name to the n8n webhook (behind a full-screen pipeline loader), and renders the brief + a per-photo room/condition grid; **accepted listings are ingested back into the KB** so they become comparables and the chat can answer about them. **Dashboard** tab shows live stats (Chart.js); each row opens a per-listing detail (description, brief, photos). The event log + listing store live in a Docker volume, so they survive container rebuilds. During early development the submit tab is tested against a mock brief so the whole UI is demoable before n8n exists.
 
 ### 5.2 RAG service (`POST /query`)
-Embeds the description and retrieves the top-3 most similar past listings from a Bedrock Knowledge Base pre-populated with ≥20 synthetic listings, then generates a short insight with Gemini that cites the listing it drew from and never fabricates facts. Output: `{ similar_listings, insight }`.
+Embeds the description and retrieves the top-3 most similar past listings from a Bedrock Knowledge Base pre-populated with ≥20 synthetic listings, then generates a short insight with Gemini that cites the listing it drew from and never fabricates facts. Output: `{ similar_listings, insight }` (a lightweight `retrieve-only` mode skips the insight — used by the assistant chat). **Accepted submissions are ingested back into the KB** (text written to the S3 data source + an ingestion job), so each new listing becomes a retrievable comparable for future queries and for the chat.
 
 ### 5.3 Image Analyser (`POST /analyse`)
 A transfer-learning EfficientNet-B0 (ImageNet weights, frozen backbone, retrained head) classifying **7 classes**: kitchen, bathroom, living room, bedroom, exterior, other, and a **`not_a_room`** reject class (added beyond the spec) so non-property photos are flagged rather than forced into a room. Below a 0.55 confidence threshold it returns `uncertain`. Output: `{ room_type, condition_score, confidence }`. Trained on public Kaggle datasets pulled via `kagglehub` (500 images/class; rooms from *robinreni/house-rooms*, exterior from *mikhailma* street data, negatives from *prasunroy/natural-images*). The **condition score is a documented placeholder** for now — room datasets carry no condition ground truth; a second head (labels bootstrapped with Gemini Vision) is future work. Full evaluation in [`docs/model_card.md`](property-triage-system/docs/model_card.md).
@@ -102,7 +102,7 @@ Eight nodes wiring the webhook through the guardrails, the Gemini Information Ex
 ## 6. Prompt Engineering
 Six prompt surfaces are tuned and logged with ≥10 test cases and a measured pass rate per surface: the n8n Information Extractor, the n8n AI Agent prompt, the RAG insight/citation prompt, the Guardrails rail prompts, the Ollama system prompt, and the LangGraph Agent tool descriptions. The full iteration history is in [`docs/prompt_log.md`](property-triage-system/docs/prompt_log.md).
 
-**Done so far:** Surface #3 (RAG insight) — V1 = 10/10, **0 fabricated listing ids**; Surface #4 (Guardrails) — V1 = 11/11, 0% false positives on valid listings; Surface #5 (Ollama) — iterated V1→V6 to 10/10 (key fixes: forbidding invented URLs/prices, anti-prompt-injection guards, in-code language matching, listings-awareness); Surface #6 (Agent tool descriptions) — V1 baseline, routing verified live. Surfaces #1–#2 are captured when the n8n flow is built (Phase 4).
+**Done so far:** Surface #3 (RAG insight) — V1 = 10/10, **0 fabricated listing ids**; Surface #4 (Guardrails) — V1 = 11/11, 0% false positives on valid listings; Surface #5 (Ollama) — iterated V1→V7 to 10/10 (key fixes: forbidding invented URLs/prices, anti-prompt-injection guards, in-code language matching, listings-awareness, and **V7: RAG-grounded with stable-ID references to stop self-contradiction across turns**); Surface #6 (Agent tool descriptions) — V1 baseline, routing verified live. Surfaces #1–#2 are captured when the n8n flow is built (Phase 4).
 
 ## 7. Results & Evaluation
 **Image Analyser.** Room-type accuracy on fresh, unseen images: **84.6%** (argmax, 40/class) — clears the >75% bar. Per-class: exterior 100%, bathroom 88%, bedroom 85%, kitchen 85%, living_room 80%, other(dining) 70%. The `not_a_room` reject class correctly flags dogs, cats, documents, and diagrams (confidence 0.73–0.95) where the 6-class model was overconfidently wrong. 7-class validation accuracy 84.4%. Full confusion matrix + OOD analysis in `docs/model_card.md`.
@@ -116,16 +116,17 @@ Six prompt surfaces are tuned and logged with ≥10 test cases and a measured pa
 *Still to do:* RAG precision@3 benchmark (managed-vector-store extension), and an end-to-end run with screenshots once n8n is wired.
 
 ## 8. Deployment Notes
-The four FastAPI services are deployed on **AWS EC2** via Docker Compose and were verified end-to-end.
+The full stack — the four FastAPI services, n8n, Ollama, and the WebUI — runs on a single **AWS EC2** instance via Docker Compose, as a **public site on the internet**, verified end-to-end.
 
-- **Instance:** t3.large, Amazon Linux 2023, `us-east-1`, 30 GB gp3 root.
-- **Bootstrap** (`deploy/ec2-userdata.sh`): installs Docker + the Compose plugin, git-clones the public repo, pulls the trained `model.pth` from S3, and runs `docker compose up --build -d` (`docker-compose.yml` at the project root).
-- **Credentials — no keys on the box:** the instance carries an **IAM role**; the services read the Gemini key from **Secrets Manager** and call **Bedrock** (KB `Retrieve` + `ApplyGuardrail`) through it. Resource IDs and the Gemini secret *name* are plain Compose env.
-- **Management via SSM:** no SSH key and **no public inbound** (the security group has no ingress rules) — the instance is driven through AWS Systems Manager.
-- **Verified on EC2:** all four `/health` returned ok (image `model_loaded: true` from the S3 model), and a live RAG `/query` returned real KB comparables (L010/L002/L001) plus a grounded Gemini insight — proving the role-based AWS access works end-to-end.
-- **Cost control:** the instance is **stopped when idle** (no compute charge; containers auto-resume on start via `restart: unless-stopped`).
+- **Instance:** `g4dn.xlarge` with an **NVIDIA Tesla T4 GPU**, Amazon Linux 2023, `us-east-1`, gp3 root. It launched as a CPU instance (`t3.xlarge`) and was **resized to the GPU type once the on-demand-G vCPU quota was approved** — the EBS volume, Elastic IP, and data all carried over.
+- **GPU for the assistant:** the NVIDIA open-kernel-module driver (built via DKMS) plus `nvidia-container-toolkit` are installed, and the `ollama` container is granted the GPU — cutting assistant responses from **~57 s on CPU to ~2–3 s** on the T4.
+- **Bootstrap** (`deploy/ec2-userdata.sh`): installs Docker + the Compose plugin, git-clones the repo, pulls the trained `model.pth` from S3, and runs `docker compose up --build -d`.
+- **Public access:** a stable **Elastic IP**; the security group exposes the WebUI (`:5050`) and n8n (`:5678`). Management is still done through **AWS Systems Manager** (no SSH key).
+- **Credentials — no keys on the box:** the instance carries an **IAM role**; services read the Gemini key from **Secrets Manager** and call **Bedrock** (KB `Retrieve`, `ApplyGuardrail`, `StartIngestionJob`) and **S3** (`GetObject`/`PutObject` for photo uploads + KB ingestion) through it.
+- **n8n hosted on the box:** the orchestration flow runs in the same Compose stack; sibling services are reached via the host gateway, the Gemini credential is configured once, and the workflow + credentials persist in a Docker volume.
+- **Persistence:** the WebUI's event log + submitted-listing store live in a Docker volume, so the dashboard and per-listing details survive container rebuilds. The Knowledge Base (S3 + S3 Vectors) is durable by design.
+- **Cost control:** `g4dn.xlarge` (~$0.53/hr) is **stopped when idle**; the GPU driver, volumes, and Elastic IP persist across stop/start, and containers auto-resume via `restart: unless-stopped`.
 - **Docker on Apple Silicon:** build `--platform linux/amd64` for parity with the x86 EC2 host.
-- **n8n:** runs in Docker locally for development; for a fully-hosted demo it can run on the same instance with its Gemini credential configured once.
 
 ## 9. Conclusions & Future Work
 *To be written at the end.* Candidate future work: the human-in-the-loop feedback/active-learning loop (deferred), a managed Pinecone/Weaviate comparison, and richer monitoring.
@@ -135,4 +136,4 @@ The four FastAPI services are deployed on **AWS EC2** via Docker Compose and wer
 - Amazon Bedrock Knowledge Bases, Amazon Bedrock Guardrails (AWS documentation).
 - Google Gemini API documentation.
 - PyTorch transfer-learning tutorial; torchvision model zoo.
-- n8n documentation; Ollama documentation; Streamlit documentation.
+- n8n documentation; Ollama documentation; NVIDIA CUDA / container-toolkit documentation.

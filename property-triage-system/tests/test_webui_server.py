@@ -49,7 +49,7 @@ def test_submit_rejected_is_logged_but_not_saved(web, monkeypatch):
     monkeypatch.setattr(web.module, "save_listing", lambda *a, **k: saved.append(a))
     monkeypatch.setattr(web.module, "log_event", lambda *a, **k: logged.append(a))
     monkeypatch.setattr(web.module, "submit_listing", lambda payload: ({"status": "rejected", "reason": "spam"}, 12))
-    r = web.client.post("/api/submit", json={"description": "buy crypto now"})
+    r = web.client.post("/api/submit", json={"description": "buy crypto now", "agent_name": "Dana"})
     assert r.get_json()["status"] == "rejected"
     assert len(logged) == 1   # dashboard still records the rejection
     assert saved == []        # severe #3: rejected input never enters the grounding store
@@ -60,6 +60,7 @@ def test_chat_streams_ollama(web, monkeypatch):
     # connect-before-stream ordering rather than stubbing it away).
     class FakeResp:
         def raise_for_status(self): pass
+        def json(self): return {}          # the RAG-grounding call (rag_listings_context) → no hits
         def iter_lines(self):
             yield b'{"message":{"content":"Hello"}}'
             yield b'{"message":{"content":" world"},"done":true}'
@@ -75,6 +76,7 @@ def test_chat_midstream_failure_is_graceful(web, monkeypatch):
     # not abort unhandled (review #2).
     class FakeResp:
         def raise_for_status(self): pass
+        def json(self): return {}          # the RAG-grounding call (rag_listings_context) → no hits
         def iter_lines(self):
             yield b'{"message":{"content":"partial"}}'
             raise requests.exceptions.ChunkedEncodingError("dropped")

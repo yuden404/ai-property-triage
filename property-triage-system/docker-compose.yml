@@ -51,6 +51,8 @@ services:
   # --- full-stack extras (for a hosted demo) -------------------------------- #
   n8n:
     image: n8nio/n8n:latest
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach the sibling services via the host gateway (Linux/EC2)
     environment:
       N8N_SECURE_COOKIE: "false"          # allow login over plain http (public IP, no TLS)
       N8N_RUNNERS_ENABLED: "true"
@@ -65,8 +67,18 @@ services:
       PORT: "5050"
       N8N_WEBHOOK_URL: http://n8n:5678/webhook/listing   # reaches n8n by compose service name
       OLLAMA_URL: http://ollama:11434                    # Ollama runs in-cluster (CPU)
+      IMAGE_URL: http://image:8002                       # WebUI analyses uploaded photos directly
+      RAG_URL: http://rag:8001                           # chat grounds on the RAG/KB (seeds + submissions)
+      UPLOAD_BUCKET: property-triage-listings-yrokach    # uploaded photos land under uploads/
+      AWS_REGION: us-east-1
+      KB_ID: "3KTFERDLUV"                                # accepted listings are ingested as RAG comparables
+      KB_DATA_SOURCE_ID: NLORTTI7SG
+      DDB_LISTINGS_TABLE: pt_listings                    # durable system-of-record (survives rebuilds)
+      DDB_EVENTS_TABLE: pt_events                        # dashboard events — durable, no more resets
+      DATA_DIR: /data                                    # local JSONL fallback when DDB tables are unset
     ports: ["5050:5050"]
-    depends_on: [n8n, ollama]
+    volumes: ["webui_data:/data"]
+    depends_on: [n8n, ollama, image, rag]
     restart: unless-stopped
 
   ollama:
@@ -74,7 +86,15 @@ services:
     volumes: ["ollama_data:/root/.ollama"]
     ports: ["11434:11434"]
     restart: unless-stopped
+    deploy:                       # hand the NVIDIA T4 to Ollama (g4dn) — needs nvidia-container-toolkit
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   n8n_data:
   ollama_data:
+  webui_data:
