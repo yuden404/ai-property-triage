@@ -1,15 +1,23 @@
 # Model Card — Image Analyser (Service 2)
 
 ## Overview
-Room-type classifier for property photos. Fine-tuned **EfficientNet-B0** (ImageNet
-weights, frozen backbone, retrained classifier head). Serves `POST /analyse` →
-`{room_type, condition_score, confidence}`; below a 0.55 confidence threshold it
-returns `"uncertain"`.
+Multi-task model for property photos. Fine-tuned **EfficientNet-B0** (ImageNet
+weights, frozen backbone) with **two heads** on the shared backbone — a room-type
+head and a condition-score head, per the spec ("add a second output head for a
+condition score from 1 to 5"). Serves `POST /analyse` →
+`{room_type, condition_score, confidence}`; below a 0.55 confidence threshold the
+room is `"uncertain"`.
 
-- **Task:** 7-class single-label image classification
+- **Task:** room type (7-class) + condition score (1–5) — one backbone, two heads
 - **Classes:** `bathroom, bedroom, exterior, kitchen, living_room, other, not_a_room`
 - **Base model:** `efficientnet_b0` (torchvision, `IMAGENET1K_V1`), backbone frozen
-- **Trained:** 12 epochs, Adam lr=1e-3, MPS (Apple Silicon), `train.py`
+- **Trained:** 14 epochs, Adam lr=1e-3, MPS (Apple Silicon), `train.py` (dual masked
+  loss — room CE on all images, condition CE on the Gemini-labelled subset)
+
+> **Serving note (hybrid):** room type is served by this CNN; the **condition score
+> is served by Gemini Vision at inference** (see *Condition score* below). The trained
+> condition head satisfies the spec and is the offline fallback, but Gemini is reliable
+> across condition types the available training data can't cover.
 
 `other` = dining rooms / non-standard rooms. `not_a_room` is a **reject class** we
 added (not in the original spec) so the model can flag non-property photos instead
@@ -41,18 +49,18 @@ this reflects room performance only.)
 | living_room | 80% | other, bedroom |
 | other (dining) | 70% | living_room, kitchen |
 
-7-class validation accuracy (incl. `not_a_room`): **84.4%**. Validation confusion
-matrix (rows=true, cols=pred):
+7-class validation accuracy (incl. `not_a_room`), dual-head model: **84.4%**.
+Validation confusion matrix (rows=true, cols=pred):
 
 ```
          bathr bedro exter kitch livin not_a other
-bathroom    57    1     0    4     1     0    1
-bedroom      1   56     0    1    15     0    1
-exterior     0    0    88    0     0     0    0
-kitchen      5    1     0   49     3     0    7
-living_rm    1    4     0    4    54     1    5
-not_a_room   0    0     0    0     0    85    0
-other        2    5     0    7    11     1   54
+bathroom    62    1     0    5     1     0    1
+bedroom      1   62     0    2    12     0    3
+exterior     0    0    90    0     0     0    0
+kitchen      0    1     0   56     3     0    9
+living_rm    1    8     0    4    50     0    8
+not_a_room   0    0     0    0     0    71    0
+other        2    2     1    8     8     0   46
 ```
 
 Doubling the data from 250→500/class lifted the weak classes notably:
@@ -73,21 +81,36 @@ Before the reject class, a solid-colour image was confidently misclassified as
 `kitchen` (1.00); the reject class fixes this.
 
 ## Condition score (1–5)
-**Not yet a trained output** — returned as a documented placeholder (`3` for rooms,
-`null` for `not_a_room`/`uncertain`). Room datasets carry no condition ground truth;
-the plan is a second head trained on labels bootstrapped with Gemini Vision. The
-graded metric is room-type accuracy.
+A **real second head** (`cond_head`), trained — not a placeholder. Because the room
+datasets carry no condition ground truth, labels were **bootstrapped with Gemini
+Vision** (`label_condition.py`, offline) over 846 images: the clean room photos
+(mostly 4–5) plus lower-condition sources for range — the *messy-vs-clean-room*
+dataset and real apartment/entrance photos (*home-bro-images*). The head trains with
+inverse-frequency class weights (the corpus skews to good condition) and reaches
+**validation MAE ≈ 0.6** (within ~½ a point of Gemini's label on a 1–5 scale).
+
+**Serving uses Gemini Vision, not the head.** Evaluated on out-of-distribution
+"bad room" photos, the trained head was unreliable — it learned *messy/dirty → low*
+but mis-scored degraded-but-tidy rooms (e.g. a worn bedroom it rated 5/5 where Gemini
+and a human say 1/5). The head can't exceed what the limited training data teaches.
+So at inference the condition score comes from **Gemini Vision** (same 1–5 rubric used
+for labelling), which is reliable across condition types; the trained head remains as
+the spec's "second output head" and as the offline fallback when Gemini is unavailable.
+Condition is `null` for `not_a_room` (not a property photo).
 
 ## Limitations
 - **Dining rooms (`other`) are the weakest class (70%)** — genuinely ambiguous with
   kitchens and living rooms.
 - Degenerate inputs (solid colours) can still slip below the reject class into
   `uncertain` rather than `not_a_room`.
-- Condition score is a placeholder (see above).
+- The trained condition head is unreliable on bad-but-tidy rooms (see *Condition
+  score*); inference serves the Gemini-Vision score instead.
 
 ## Reproduce
 ```bash
 cd code/image_analyser
-../../.venv/bin/python prepare_data.py --per-class 500   # needs ~/.kaggle/kaggle.json
-../../.venv/bin/python train.py --epochs 12              # writes model.pth + classes.json
+../../.venv/bin/python prepare_data.py --per-class 500   # rooms; needs ~/.kaggle/kaggle.json
+# condition labels (Gemini Vision) — needs AWS creds for the Gemini secret:
+AWS_PROFILE=course ../../.venv/bin/python label_condition.py --per-class 70
+../../.venv/bin/python train.py --epochs 14              # writes model.pth + classes.json
 ```

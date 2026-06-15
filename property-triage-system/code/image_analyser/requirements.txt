@@ -12,3 +12,8 @@ uvicorn>=0.30
 pillow>=10.0
 requests>=2.32
 python-dotenv>=1.0
+
+# condition score served by Gemini Vision (room type stays on the CNN); the key
+# comes from AWS Secrets Manager via shared/gemini_utils
+boto3>=1.34
+google-genai>=1.0

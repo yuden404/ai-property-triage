@@ -13,8 +13,11 @@ venv/
 code/webui/events.jsonl
 code/webui/listings.jsonl
 
-# Data & models (large; not committed)
+# Data & models (large; not committed — reproducible via prepare_data.py /
+# label_condition.py datasets). condition_labels.json IS committed (the labels).
 data/
+code/image_analyser/data_messy/
+code/image_analyser/data_varied/
 *.pth
 
 # OS

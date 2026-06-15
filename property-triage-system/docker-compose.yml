@@ -33,6 +33,10 @@ services:
     build: { context: ./code, dockerfile: image_analyser/Dockerfile }
     # model.pth (git-ignored) is placed into code/image_analyser/ before build by
     # the EC2 bootstrap (pulled from S3); without it the service runs as a stub.
+    environment:
+      AWS_REGION: us-east-1
+      GEMINI_SECRET_NAME: property-triage/gemini-api-key   # condition score via Gemini Vision
+      GEMINI_MODEL: gemini-2.5-flash
     ports: ["8002:8002"]
     restart: unless-stopped
 

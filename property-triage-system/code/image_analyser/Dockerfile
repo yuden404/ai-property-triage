@@ -8,6 +8,7 @@ WORKDIR /app
 COPY image_analyser/requirements.txt .
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
+COPY shared/ shared/
 COPY image_analyser/ image_analyser/
 
 EXPOSE 8002
