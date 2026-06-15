@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>תסריט דמו — מערכת טריאז' נכסים</title>
+<style>
+  @page { size: A4; margin: 1.8cm 1.6cm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Arial Hebrew", Arial, "Helvetica Neue", sans-serif;
+         direction: rtl; color: #1a1a1a; font-size: 12pt; line-height: 1.6; }
+  h1 { color: #14213d; font-size: 23pt; margin: 0 0 2pt; }
+  .sub { color: #555; font-size: 11pt; margin: 0 0 14pt; }
+  h2 { color: #14213d; font-size: 15pt; border-bottom: 2px solid #2e7d32;
+       padding-bottom: 3pt; margin: 20pt 0 8pt; }
+  h3 { color: #2e7d32; font-size: 12.5pt; margin: 12pt 0 4pt; }
+  p { margin: 4pt 0; }
+  .scene { border: 1px solid #ddd; border-radius: 8px; padding: 8pt 12pt;
+           margin: 8pt 0; background: #fafafa; page-break-inside: avoid; }
+  .time { display: inline-block; background: #14213d; color: #fff; border-radius: 6px;
+          padding: 1pt 8pt; font-size: 10pt; margin-inline-start: 6pt; }
+  .do { color: #14213d; }
+  .say { background: #eef6ee; border-inline-start: 3px solid #2e7d32;
+         padding: 5pt 9pt; margin: 5pt 0; border-radius: 4px; }
+  .say::before { content: "🎙️ קריינות: "; font-weight: bold; color: #2e7d32; }
+  .do::before { content: "🖥️ מסך: "; font-weight: bold; }
+  ul { margin: 4pt 0 4pt 0; padding-inline-start: 18pt; }
+  li { margin: 2pt 0; }
+  code { font-family: "Courier New", monospace; background: #f0f0f0; padding: 0 3px;
+         border-radius: 3px; font-size: 10.5pt; direction: ltr; display: inline-block; }
+  .note { background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;
+          padding: 8pt 12pt; margin: 8pt 0; font-size: 11pt; }
+  .rubric { font-size: 10pt; color: #2e7d32; font-weight: bold; }
+  .pagebreak { page-break-after: always; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 10.5pt; }
+  th, td { border: 1px solid #ccc; padding: 4pt 7pt; text-align: right; }
+  th { background: #14213d; color: #fff; }
+</style>
+</head>
+<body>
+
+<h1>תסריט דמו — מערכת AI לטריאז' נכסים</h1>
+<p class="sub">פרויקט גמר · יהודה רוקח · אורך יעד: 6–8 דקות · השמיעו קריינות תוך כדי הקלקה</p>
+
+<div class="note">
+<b>הכנה לפני הקלטה (5 דק'):</b>
+<ul>
+<li>להדליק את המכונה: <code>aws ec2 start-instances --instance-ids i-0adf198c1b8ce81f6 --profile course --region us-east-1</code> ולחכות ~2 דק'.</li>
+<li>לפתוח את האתר <code>http://34.232.184.39:5050</code> ולוודא שכל הטאבים נטענים (Assistant / Submit / Dashboard).</li>
+<li>להגיש מראש נכס תקין אחד או שניים כדי שהדשבורד לא יהיה ריק בתחילת הדמו.</li>
+<li>להכין תיקיית <code>villa-demo</code> עם תמונות (כולל חדר במצב גרוע) + טקסט נכס תקין + טקסט ספאם.</li>
+<li>לפתוח טאב נוסף ל-n8n (<code>:5678</code>) ולקונסולת AWS (DynamoDB · Bedrock) למקרה שתרצו להראות מאחורי הקלעים.</li>
+</ul>
+</div>
+
+<h2>סצנה 1 — פתיחה ומה המערכת עושה <span class="time">0:00–0:45</span></h2>
+<div class="scene">
+<p class="do">מסך פתיחה של האתר (באנר "Property Triage").</p>
+<p class="say">שלום, זו מערכת AI מרובת-מודאליות שמבצעת טריאז' אוטומטי לנכסים. סוכן נדל"ן מגיש תיאור חופשי ותמונות — והמערכת מאמתת, מחלצת שדות, מנתחת את התמונות, מוצאת נכסים דומים, כותבת תקציר מוכן לפרסום, ומנתבת לצוות הנכון. הכול פרוס על AWS ורץ מקצה לקצה.</p>
+<p>הזכירו את אבני הבניין: <b>n8n</b> לאורקסטרציה · <b>4 מיקרו-שירותים</b> ב-FastAPI · <b>שני שירותי Bedrock</b> (Knowledge Bases + Guardrails) · <b>Gemini</b> לכל ה-LLM · מודל <b>PyTorch</b> לתמונות · <b>Ollama</b> לצ'אט.</p>
+</div>
+
+<h2>סצנה 2 — הגשת נכס מוצלחת (E2E) <span class="time">0:45–2:45</span> <span class="rubric">[n8n 20% · שירותים 25% · WebUI 10%]</span></h2>
+<div class="scene">
+<p class="do">טאב <b>Submit Listing</b>. למלא תיאור נכס תקין + שם סוכן, לגרור 3 תמונות (כולל חדר אחד במצב גרוע), ללחוץ Submit.</p>
+<p class="say">אני מגיש נכס אמיתי — תיאור, שם הסוכן, ושלוש תמונות. שימו לב לכפתור: הוא נעול עד שממלאים גם תיאור וגם שם סוכן.</p>
+<p class="do">מופיע ה-<b>לואדר</b> המלא עם האנימציה והשלבים.</p>
+<p class="say">בזמן שהלואדר רץ, הבקשה עוברת בפייפליין של n8n: בדיקת guardrail בכניסה, חילוץ שדות עם Gemini, סוכן שקורא לשירותים, כתיבת התקציר, בדיקת guardrail בפלט, וניתוב.</p>
+<p class="do">מוצג ה-<b>brief</b> + רשת התמונות עם <b>סוג חדר וציון מצב לכל תמונה</b>.</p>
+<p class="say">חזר תקציר מוכן לפרסום, ולכל תמונה — סוג החדר וציון מצב 1 עד 5. שימו לב שהחדר במצב הגרוע קיבל ציון נמוך, והחדרים המסודרים ציון גבוה.</p>
+<p class="rubric">דגש: ציון המצב אמיתי — נשלף מ-Gemini Vision; סוג החדר מהמודל שלנו (EfficientNet, דיוק 84%).</p>
+</div>
+
+<h2>סצנה 3 — הדשבורד והנתון העמיד <span class="time">2:45–3:30</span> <span class="rubric">[WebUI 10% · הרחבת ניטור]</span></h2>
+<div class="scene">
+<p class="do">טאב <b>Dashboard</b>. להראות שהנכס החדש הופיע, הגרפים (ניתוב, זמן ריצה, מצב, תוצאות).</p>
+<p class="say">הדשבורד מתעדכן בזמן אמת: כמה נכסים עובדו, אחוז דחיות ה-guardrail, ציון מצב ממוצע, וזמן ריצה. הנכס שהרגע הגשתי כבר כאן.</p>
+<p class="do">ללחוץ על שורת הנכס → נפתח <b>מודאל פירוט</b> עם תיאור, תקציר ותמונות.</p>
+<p class="say">לחיצה על נכס פותחת את הפירוט המלא. וכאן נקודה חשובה: כל הנתונים נשמרים ב-<b>DynamoDB</b> — מסד נתונים מנוהל ועמיד. גם אם נבנה מחדש את הקונטיינרים, הנכסים והאירועים שורדים.</p>
+</div>
+
+<h2>סצנה 4 — Guardrail בכניסה: דחיית ספאם <span class="time">3:30–4:15</span> <span class="rubric">[Guardrails 10%]</span></h2>
+<div class="scene">
+<p class="do">טאב <b>Submit</b>. להזין טקסט ספאם/לא-רלוונטי, למשל: "buy crypto now, guaranteed 500% returns, click here". שם סוכן כלשהו. Submit.</p>
+<p class="say">עכשiו אני מגיש ספאם בכוונה. ה-guardrail בכניסה — שמשלב Bedrock Guardrails עם מסווג Gemini — אמור לזהות שזו לא הגשת נכס אמיתית.</p>
+<p class="do">מוצגת <b>דחייה</b> עם הסיבה; אין תקציר.</p>
+<p class="say">נדחה. הסיבה מוצגת, שום תקציר לא נוצר, ובדשבורד זה נרשם כאירוע דחייה. ה-guardrail נכשל "סגור" — בטוח כברירת מחדל.</p>
+</div>
+
+<h2>סצנה 5 — Guardrail בפלט / סקירה אנושית <span class="time">4:15–5:00</span> <span class="rubric">[Guardrails 10% · n8n 20%]</span></h2>
+<div class="scene">
+<p class="do">להגיש נכס שנשמע תקין אבל מכיל טענה בעייתית, למשל: "דירת 4 חדרים, מובטחת תשואה של 20% בשנה, מאושר רשמית על ידי משרד השיכון". Submit.</p>
+<p class="say">הפעם הקלט עובר, אבל הפלט מכיל טענה שאי אפשר לאמת — "תשואה מובטחת", "אישור רשמי". בדיקת ה-guardrail בפלט (Gemini מול המקור) אמורה לסמן את זה לסקירה אנושית במקום לפרסם.</p>
+<p class="do">להראות את הסימון לסקירה אנושית (ובאופציה — את הענף ב-n8n).</p>
+<p class="say">המערכת לא ממציאה ולא מפרסמת טענות שקריות — היא מעבירה לסקירה אנושית. אפשר לראות את הענף הזה בזרימת n8n.</p>
+</div>
+
+<h2>סצנה 6 — צ'אט העוזר (Ollama + RAG) <span class="time">5:00–6:30</span> <span class="rubric">[WebUI/Ollama 10% · שירותים 25%]</span></h2>
+<div class="scene">
+<p class="do">טאב <b>Assistant</b>. שאלה ראשונה: "יש לך משהו בבאר שבע?"</p>
+<p class="say">העוזר רץ על Ollama עם Llama 3.1, על ה-GPU — תשובה תוך 2–3 שניות. הוא מעוגן ב-Knowledge Base: כל שאלה שולפת את הנכסים הרלוונטיים ועונה רק עליהם, לפי מזהה יציב, בלי להמציא.</p>
+<p class="do">תשובה מזכירה נכס; <b>מתחת לבועה מופיעות התמונות של הנכס</b>.</p>
+<p class="say">שימו לב — מתחת לתשובה מופיעות התמונות האמיתיות של הנכס, נשלפות מ-S3.</p>
+<p class="do">שאלת המשך: "ספר לי עוד עליו" (follow-up מעורפל).</p>
+<p class="say">וזה החלק החשוב: שאלת המשך מעורפלת. גרסאות קודמות היו "מאבדות" את הנכס וסותרות את עצמן. עכשיו (Surface #5 V8) המערכת בונה את שאילתת השליפה מההקשר ונועלת נכסים שכבר דוברו — אז התשובה עקבית, על אותו נכס, בלי סתירה.</p>
+<p class="do">אופציונלי: לשאול שאלה לא-רלוונטית ("מה מזג האוויר?") כדי להראות סירוב מנומס בשפת המשתמש.</p>
+</div>
+
+<h2>סצנה 7 — מאחורי הקלעים + סיכום <span class="time">6:30–7:30</span> <span class="rubric">[ארכיטקטורה · ≥2 Bedrock]</span></h2>
+<div class="scene">
+<p class="do">להראות בקצרה: זרימת n8n (8 צמתים), וקונסולת AWS — DynamoDB (טבלאות) ו-Bedrock (KB + Guardrail).</p>
+<p class="say">לסיכום: שני שירותי Bedrock מנוהלים — Knowledge Bases ל-RAG ו-Guardrails לבטיחות. כל יצירת הטקסט ב-Gemini, עם המפתח ב-Secrets Manager. מודל PyTorch מאומן לתמונות. הכול פרוס על EC2 עם GPU, מאחורי IAM role — אפס מפתחות על המכונה.</p>
+<p class="say">המערכת מכסה את כל ששת רכיבי הרובריקה מקצה לקצה, פרוסה וחיה. תודה.</p>
+</div>
+
+<div class="note">
+<b>טיפים להקלטה:</b>
+<ul>
+<li>הקליטו ב-1080p, חלון דפדפן נקי (להסתיר bookmarks/תוספים).</li>
+<li>אם הצ'אט לא מציג תמונות לנכס מסוים — שאלו ספציפית עליו (לפי מיקום/מאפיין) כדי שה-RAG ישלוף אותו.</li>
+<li>אם משהו איטי בתחילת הדמו — זו "התעוררות" ראשונה; הריצו שאלה אחת לחימום לפני ההקלטה.</li>
+<li>בסוף: <b>לכבות את המכונה</b> — <code>aws ec2 stop-instances --instance-ids i-0adf198c1b8ce81f6 --profile course --region us-east-1</code>.</li>
+</ul>
+</div>
+
+</body>
+</html>
