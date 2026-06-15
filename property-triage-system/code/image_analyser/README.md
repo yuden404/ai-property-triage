@@ -44,6 +44,10 @@ a stub returning the same schema.
 
 ## Condition score (1–5)
 
-Room datasets have no condition ground truth. Plan: bootstrap ~200 condition
-labels with Gemini Vision, hand-correct, then train a second head. Documented as
-a heuristic estimate — the graded metric is room-type accuracy.
+Room datasets have no condition ground truth, so condition labels were
+**bootstrapped with Gemini Vision** (`label_condition.py`, 846 images: clean
+rooms + messy/worn sources for range) and a **second head (`cond_head`) was
+trained** on them. On out-of-distribution bad rooms the trained head was
+unreliable, so at serving the condition score is provided by **Gemini Vision**
+(same 1–5 rubric); the trained head is the spec's "second output head" and the
+offline fallback. The graded metric is room-type accuracy. See `docs/model_card.md`.

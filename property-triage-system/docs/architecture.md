@@ -64,7 +64,7 @@ footprint to exactly the two managed services.
 | KB on OpenSearch Serverless | **S3 Vectors** | OpenSearch idles ~$5–6/day on a personal account; S3 Vectors costs cents |
 | Image: 6 room classes | **7 classes (+ `not_a_room`)** | Explicit reject of non-property photos; fixes CNN overconfidence on OOD |
 | Guardrails PII masking | **Removed** | No email/phone fields exist in the system → scope creep |
-| Image condition score (1–5) | **Placeholder** | No condition ground truth in room datasets; second head is future work (Gemini-Vision-bootstrapped) |
+| Image condition score (1–5) | **Trained head, but served by Gemini Vision** | No condition ground truth in room datasets, so the second head was trained on Gemini-bootstrapped labels; it proved unreliable on OOD bad rooms, so the served score comes from Gemini Vision (the head remains the spec's "second output head" + offline fallback) — see `model_card.md` |
 
 ## Testing
 Offline `pytest` suite (43 tests) covers shared helpers, all four services, and the

@@ -130,7 +130,9 @@ The full stack — the four FastAPI services, n8n, Ollama, and the WebUI — run
 - **Docker on Apple Silicon:** build `--platform linux/amd64` for parity with the x86 EC2 host.
 
 ## 9. Conclusions & Future Work
-*To be written at the end.* Candidate future work: the human-in-the-loop feedback/active-learning loop (deferred), a managed Pinecone/Weaviate comparison, and richer monitoring.
+The project delivers all six rubric components as one integrated, deployed system: an n8n flow that validates, extracts, enriches (via an AI Agent that always consults the LangGraph reasoner), audits and routes a listing; four containerised FastAPI services on a GPU EC2 instance; a dual-head image model (84.4% room accuracy + a trained condition head); input/output guardrails that fail closed; seven tuned prompt surfaces with measured pass rates; and a Flask + Ollama WebUI grounded on the Bedrock Knowledge Base. The recurring engineering theme was **grounding and honesty over plausibility** — every layer is constrained to cite real data and refuse to invent, and where a component could not be made reliable (the CNN condition head on out-of-distribution rooms) the system delegates to a more capable judge (Gemini Vision) rather than ship a confident wrong answer.
+
+Candidate future work: the human-in-the-loop feedback / active-learning loop (deferred); a managed Pinecone/Weaviate comparison with a precision@3 benchmark; committed per-surface evaluation artifacts so every pass rate is independently reproducible; differentiated team-delivery webhooks beyond the in-demo response tagging; and a Hebrew-tuned local chat model (or routing Hebrew turns through Gemini) for more fluent assistant replies.
 
 ## 10. References
 - Project guideline: *AI Engineering — Final Project: AI-Powered Real Estate Property Triage System.*
