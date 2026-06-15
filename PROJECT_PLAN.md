@@ -42,6 +42,10 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | 2026-06-15 | **WebUI image flow + extensions** | Photos upload to S3 → Image Analyser → per-photo grid; dashboard rows open a detail view; full-screen pipeline loader; Submit locked until description + agent filled |
 | 2026-06-15 | **GPU: resized to `g4dn.xlarge` (Tesla T4)** once the on-demand-G quota was approved | Ollama on GPU (NVIDIA open driver + container-toolkit) → chat ~2–3 s vs ~57 s on CPU |
 | 2026-06-15 | **Persistent volume for WebUI data** (`/data`) | Events + submitted-listing store survive container rebuilds (the KB was always durable) |
+| 2026-06-15 | **DynamoDB as system-of-record** (`pt_listings`, `pt_events`), replacing the Docker volume | The volume was wiped on a rebuild and lost listings/events; DynamoDB is durable, pay-per-request (~$0 at this scale), records stored as a JSON doc per id |
+| 2026-06-15 | **Photos public-read on S3 `uploads/`** → permanent URLs (no presigning) | Presigned URLs expired in 1h; KB-stored listings need links that don't rot. Only `uploads/` is public; KB text under `listings/` stays private |
+| 2026-06-15 | **Chat Surface #5 → V8** (conversation-context retrieval + pin discussed listings) | A vague follow-up ("tell me about it") re-retrieved a different set and contradicted an earlier turn; build the query from recent turns + pin listings already named |
+| 2026-06-15 | **Condition score = trained second head, served by Gemini Vision** (hybrid) | Spec asks for a second head (trained, Gemini-bootstrapped labels) but it's unreliable on OOD bad rooms; Gemini Vision serves the score reliably, head is spec + offline fallback |
 
 ## Rubric self-assessment (filled at the final code review)
 | Criterion | Weight | Target | Actual (in progress) |

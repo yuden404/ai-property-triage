@@ -4,10 +4,13 @@
 A multi-modal real-estate listing-triage pipeline. A listing (text + images) is
 validated, enriched by an agent that calls specialised services, turned into a
 publishable brief, re-checked, and routed. Uploaded photos are classified by the
-Image Analyser, and accepted listings are ingested back into the Knowledge Base.
-Plus a conversational assistant **grounded on the Knowledge Base** (it retrieves the
-listings relevant to each question, by stable ID). The whole stack runs on one
-**GPU EC2 instance** (`g4dn.xlarge` / Tesla T4 — Ollama on the GPU).
+Image Analyser (room type from the CNN, **condition score from Gemini Vision**) and
+accepted listings are ingested back into the Knowledge Base. Submitted listings and
+dashboard events persist in **Amazon DynamoDB** (durable across rebuilds); photos are
+served from **S3** by permanent URL. Plus a conversational assistant **grounded on the
+Knowledge Base** (each turn builds its query from the recent conversation and pins
+listings already discussed, answering by stable ID; photos appear under the reply).
+The whole stack runs on one **GPU EC2 instance** (`g4dn.xlarge` / Tesla T4 — Ollama on the GPU).
 
 ```
                          ┌──────────────────────────────────────────────┐
@@ -41,7 +44,7 @@ listings relevant to each question, by stable ID). The whole stack runs on one
 | Service | Port | Endpoint | Stack |
 |---------|------|----------|-------|
 | RAG | 8001 | `POST /query` → `{similar_listings, insight}` | Bedrock KB (S3 Vectors) retrieve + Gemini cited insight; `retrieve-only` mode for the chat; accepted submissions ingested back into the KB |
-| Image Analyser | 8002 | `POST /analyse` → `{room_type, condition_score, confidence}` | EfficientNet-B0 (7-class) |
+| Image Analyser | 8002 | `POST /analyse` → `{room_type, condition_score, confidence}` | EfficientNet-B0, two heads (room 7-class + condition 1–5); room from CNN, **condition served by Gemini Vision** (trained head = spec + fallback) |
 | Guardrails | 8003 | `POST /check/input` `/check/output` → `{pass, reason, safe_text}` | Bedrock ApplyGuardrail + Gemini classifier/auditor |
 | LangGraph Agent | 8000 | `POST /agent/run` → `{answer, tools_used, reasoning_steps}` | LangGraph (planner→tool_executor→synthesiser), Gemini, calls RAG + Image |
 

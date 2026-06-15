@@ -16,7 +16,7 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 | 2 | n8n AI Agent | agent system prompt + tool descriptions + brief (Gemini) | ✅ 10/10 end-to-end + brief V1→V4 |
 | 3 | RAG insight / citation | Service 1 — Gemini context-injection + citation prompt | ✅ V1 = 10/10 |
 | 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
-| 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V7 = 10/10 |
+| 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V8 = 10/10 |
 | 6 | LangGraph Agent tool descriptions | Service 4 — planner tool-routing descriptions (Gemini) | ✅ V1 = 9/10 routing |
 
 ---
@@ -244,6 +244,9 @@ The instructor clarified the assistant must also **answer questions about the li
 
 ### V7 — RAG-grounded + stable IDs (2026-06-15)
 The grounding source was switched from the local `listings.jsonl` to the **Bedrock Knowledge Base** (the RAG service, `with_insight=false` retrieve-only): each turn retrieves the listings relevant to the question, so the assistant answers about the **whole corpus** (the ≥20 seed comparables + every accepted submission) and survives container rebuilds. **Failure fixed:** the WebUI context numbered the retrieved listings "Listing 1/2/3" and rule 1 said "cite the listing number" — but the set is re-retrieved every turn, so positions were unstable and the model **contradicted itself** (turn 1: *"Listing 3 = L015 needs renovation"*; turn 2: *"Listing 3 isn't present"*). **Change:** (a) the RAG context now presents each listing by its **stable ID/title** (`L015`, `SUBMITTED-…`) with no position number; (b) rule 1 now says: refer to listings **by ID, never by position**, discuss **only** the retrieved listings, and **never contradict** an earlier answer. **Verified** on `llama3.1` (GPU) across two turns: *"which listings need renovation?"* → cites `L015` + `SUBMITTED-…` by ID; *"what is L015?"* → consistent, **no contradiction**; automated check: 0 positional refs, real IDs present. **Pass rate held at 10/10.**
+
+### V8 — conversation-context retrieval + pinned listings (2026-06-15)
+V7 still broke on **follow-up turns**: retrieval ran on the *last message alone*, so a vague *"tell me about it"* (3 words, no topic) re-retrieved a **different** set and the model said it had no such listing — contradicting the turn before. Observed live: turn 1 *"anything in Beersheba?"* → returns `SUBMITTED-…ca9876`; turn 2 *"tell me about it"* → *"there's no listing ca9876…"*. **Change (in `build_messages`/`rag_listings_context`):** (a) the retrieval query is built from the **last few user turns**, so a follow-up carries the topic and re-retrieves the same listings; (b) any listing **already named earlier in the conversation** is *pinned* — fetched by id from the DynamoDB record store and always kept in context — so a listing once discussed never drops out. **Verified** live on the GPU box: turn 1 returns the Beersheba listing; turn 2 *"tell me about it"* elaborates on the **same** listing, no contradiction. **Pass rate held at 10/10.** *(Related, not a graded surface: the served image **condition score** uses a Gemini-Vision prompt with the same 1–5 rubric used to bootstrap the training labels — see `label_condition.py` / `image_analyser/main.py` and `model_card.md`.)*
 
 ---
 
