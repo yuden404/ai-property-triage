@@ -3,7 +3,7 @@
 Tune here and keep versions in sync with the log.
 """
 
-# Surface #3 — V1 baseline (2026-06-10)
+# Surface #3 — V3 (2026-06-15): id-less-comparable rule, no leaked example id
 INSIGHT_PROMPT = """\
 You are a senior real-estate analyst at a property agency.
 
@@ -20,7 +20,14 @@ actionable takeaway.
 RULES:
 1. Base EVERY claim only on the listings above — never invent prices, sizes,
    locations or features that are not written there.
-2. Always cite the listing ID you draw from, e.g. "(per L007)".
-3. If the retrieved listings are not genuinely comparable, say so plainly
+2. When you draw a fact from a comparable, cite that comparable's exact ID as
+   written in the context, e.g. "(per L007)". Cite ONLY an ID that literally
+   appears in the context. The relevance score is NOT an ID — never cite a
+   score, "score 0.76", or any other made-up handle. Do not invent an ID for
+   the new listing; refer to it as "the new listing".
+3. If a comparable has no listing ID in the context, do NOT invent or fake one:
+   either leave that comparable out of your insight, or refer to it as "an
+   unidentified comparable (no ID)" — never attach a citation to it.
+4. If the retrieved listings are not genuinely comparable, say so plainly
    instead of forcing a comparison.
 """

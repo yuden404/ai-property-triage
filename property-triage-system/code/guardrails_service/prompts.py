@@ -27,7 +27,7 @@ Return ONLY this JSON (no markdown, no commentary):
 {{"is_property_listing": true/false, "language": "he"/"en"/"other", "reason": "<one short sentence>"}}
 """
 
-# Surface #4 (output rail) — V1 baseline (2026-06-10)
+# Surface #4 (output rail) — V2: hardened JSON output (2026-06-15)
 OUTPUT_AUDITOR_PROMPT = """\
 You audit AI-generated real-estate reports before publication.
 
@@ -51,6 +51,11 @@ Flag a violation ONLY for:
 
 Reasonable marketing phrasing, summaries and soft language are NOT violations.
 
-Return ONLY this JSON (no markdown):
+OUTPUT FORMAT — CRITICAL:
+Your entire response must be a single raw JSON object and nothing else. Do NOT
+wrap it in ``` or ```json code fences. Do NOT add any text before or after it.
+The first character you emit must be {{ and the last must be }}.
+
+Shape:
 {{"pass": true/false, "violations": [{{"type": "<INVENTED_FACT|GUARANTEE|LEGAL_CLAIM>", "quote": "<offending text>", "why": "<short>"}}]}}
 """

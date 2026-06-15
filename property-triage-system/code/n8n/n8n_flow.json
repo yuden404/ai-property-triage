@@ -7,6 +7,10 @@
         "attributes": {
           "attributes": [
             {
+              "name": "listing_type",
+              "description": "\"sale\" or \"rent\" — only if it can be determined from the text"
+            },
+            {
               "name": "property_type",
               "description": "e.g. apartment, house, villa, office, retail, warehouse — only if explicitly stated"
             },
@@ -16,7 +20,7 @@
             },
             {
               "name": "price",
-              "description": "asking price with currency, only if stated"
+              "description": "SALE/asking price with currency, only if a sale price is stated (never a rent)"
             },
             {
               "name": "num_rooms",
@@ -29,12 +33,12 @@
             },
             {
               "name": "certifications",
-              "description": "permits or certifications mentioned, else leave empty"
+              "description": "permits, occupancy certificates or certifications mentioned (e.g. 'building permit #4471'), else leave empty"
             }
           ]
         },
         "options": {
-          "systemPromptTemplate": "You extract structured fields from a real-estate listing. Extract ONLY facts explicitly present in the text — never infer, guess, or invent. If a field is not stated, omit it.\n\n{format_instructions}"
+          "systemPromptTemplate": "You extract structured fields from a real-estate listing. Extract ONLY facts explicitly present in the text — never infer, guess, or invent. If a field is not stated, omit it.\nThe `price` field is the SALE/asking price only. If the figure is a RENT (e.g. \"per month\", \"/month\", \"for rent\"), do NOT put it in `price`; instead set `listing_type` to \"rent\" and put the rent figure in `key_features`. Set `listing_type` to \"sale\" only when a sale price is stated.\n\n{format_instructions}"
         }
       },
       "id": "d4eb17d9-36af-4357-b02a-aaf980d83b64",

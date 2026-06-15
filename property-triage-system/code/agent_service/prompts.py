@@ -13,9 +13,11 @@ TOOL_DESCRIPTIONS = """\
   prices, comparables, neighbourhoods, what similar homes offer, or how a property is
   positioned versus the market. Input: a free-text description of the property or the question.
 - image: Analyses ONE property photo and returns its room type (kitchen / bathroom / bedroom /
-  living room / exterior / other) and a 1-5 condition score with a confidence value. Use it
-  ONLY for questions about the visual condition of rooms in the uploaded images, or what
-  renovation a room needs. Requires image URLs; never use it when no images were provided."""
+  living room / exterior / other) and a 1-5 condition score with a confidence value. Use it for
+  the visual condition of rooms, what renovation a room needs, AND any request to describe,
+  characterise, assess, or summarise the property itself whenever a photo is provided — the
+  photo is first-hand evidence about the property, so describing the property includes
+  describing what the image shows. Requires image URLs; never use it when no images were provided."""
 
 PLANNER_PROMPT = """You are the planner for a real-estate analysis agent. Decide which tools to call to answer the user's question.
 
