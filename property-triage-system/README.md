@@ -43,7 +43,7 @@ code/
   n8n/n8n_flow.json        importable n8n workflow
 docs/                      prompt_log.md (25%), architecture.md, model_card.md
 demo/                      demo_script.pdf (+ the recorded video)
-deploy/                    ec2-userdata.sh (bootstrap), n8n_flow.ec2.json
+deploy/                    ec2-userdata.sh (bootstrap)
 tests/                     43-test offline pytest suite (AWS/Gemini/Ollama mocked)
 ```
 
@@ -87,6 +87,7 @@ cd code/image_analyser
 ../../.venv/bin/python prepare_data.py --per-class 500      # rooms (needs ~/.kaggle/kaggle.json)
 AWS_PROFILE=course ../../.venv/bin/python label_condition.py --per-class 70   # condition labels via Gemini Vision
 ../../.venv/bin/python train.py --epochs 14                 # writes model.pth + classes.json
+../../.venv/bin/python eval.py                             # reproduces 84.4% val → eval_metrics.json
 ```
 
 Room-type head reaches **84.4%** val accuracy (>75%). The condition head (1–5) is trained

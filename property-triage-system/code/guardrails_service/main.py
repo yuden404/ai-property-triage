@@ -61,13 +61,19 @@ def _parse_json(raw: str) -> dict:
 
 
 def _apply_guardrail(text: str, source: str) -> dict:
-    """Run Bedrock ApplyGuardrail. Returns {blocked, reasons}."""
-    resp = _runtime.apply_guardrail(
-        guardrailIdentifier=GUARDRAIL_ID,
-        guardrailVersion=GUARDRAIL_VERSION,
-        source=source,
-        content=[{"text": {"text": text}}],
-    )
+    """Run Bedrock ApplyGuardrail. Returns {blocked, reasons}. Fails CLOSED: if the
+    Bedrock call itself errors (throttling, network, bad id), treat it as a block
+    rather than letting the exception propagate — a safety check must never let
+    content through just because the check was unavailable."""
+    try:
+        resp = _runtime.apply_guardrail(
+            guardrailIdentifier=GUARDRAIL_ID,
+            guardrailVersion=GUARDRAIL_VERSION,
+            source=source,
+            content=[{"text": {"text": text}}],
+        )
+    except Exception as exc:  # noqa: BLE001 — any failure of the safety call → fail closed
+        return {"blocked": True, "reasons": [f"guardrail-unavailable:{type(exc).__name__}"]}
     reasons = []
     for a in resp.get("assessments", []):
         for f in a.get("contentPolicy", {}).get("filters", []):

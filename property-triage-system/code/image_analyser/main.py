@@ -9,9 +9,11 @@ CONFIDENCE_THRESHOLD the room is "uncertain". If no model file is present yet it
 runs as a STUB returning the same schema, so n8n and the LangGraph agent can
 integrate before training finishes.
 
-Condition score (1-5) is a real trained head: its labels were bootstrapped with
-Gemini Vision (offline, see label_condition.py) and distilled into the CNN — so
-serving needs no Gemini call. condition is null for not_a_room / uncertain.
+Condition score (1-5): the CNN has a real trained second head (labels bootstrapped
+with Gemini Vision, see label_condition.py), but it was unreliable on out-of-
+distribution bad rooms, so the SERVED score comes from Gemini Vision at inference
+(same 1-5 rubric); the trained head is the spec's second output head and the offline
+fallback when Gemini is unavailable. condition is null for not_a_room / uncertain.
 
 Run locally (from the code/ directory):
     ../.venv/bin/python -m uvicorn image_analyser.main:app --port 8002

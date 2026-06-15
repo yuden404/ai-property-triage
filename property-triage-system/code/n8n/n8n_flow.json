@@ -52,7 +52,8 @@
     },
     {
       "parameters": {
-        "options": {}
+        "options": {},
+        "modelName": "models/gemini-2.5-flash"
       },
       "id": "2bcd72ad-8254-49a8-bd4a-559a63ec6e4f",
       "name": "Gemini Chat Model",

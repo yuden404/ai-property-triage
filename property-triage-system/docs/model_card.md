@@ -36,20 +36,22 @@ of being forced to pick a room — see *Robustness* below.
 
 ## Results
 
-**Room-type accuracy on fresh, unseen images (argmax, 40/class): 84.6%** — clears
-the >75% bar. (Evaluated on images excluded from `data/`; `not_a_room` excluded so
-this reflects room performance only.)
+**Room-type validation accuracy (dual-head model): 84.4%** — clears the >75% bar.
+**Reproducible**: `eval.py` rebuilds the seed-42 / 15% val split (same as `train.py`),
+loads the committed `model.pth`, and writes `eval_metrics.json` (room accuracy 0.8436,
+per-class, condition MAE 0.62 over n=589 val items). Per-class room accuracy from that
+run:
 
-| Class | Accuracy | Main confusions |
-|-------|----------|-----------------|
-| exterior | 100% | — |
-| bathroom | 88% | kitchen |
-| bedroom | 85% | living_room |
-| kitchen | 85% | living_room, other |
-| living_room | 80% | other, bedroom |
-| other (dining) | 70% | living_room, kitchen |
+| Class | Accuracy |
+|-------|----------|
+| exterior | 100% |
+| not_a_room | 100% |
+| bathroom | 89% |
+| kitchen | 81% |
+| bedroom | 78% |
+| living_room | 70% |
+| other (dining) | 69% |
 
-7-class validation accuracy (incl. `not_a_room`), dual-head model: **84.4%**.
 Validation confusion matrix (rows=true, cols=pred):
 
 ```
@@ -113,4 +115,5 @@ cd code/image_analyser
 # condition labels (Gemini Vision) — needs AWS creds for the Gemini secret:
 AWS_PROFILE=course ../../.venv/bin/python label_condition.py --per-class 70
 ../../.venv/bin/python train.py --epochs 14              # writes model.pth + classes.json
+../../.venv/bin/python eval.py                          # reproduces metrics → eval_metrics.json
 ```
