@@ -54,7 +54,7 @@ This is the **living** project doc: it tracks decisions and progress as we build
 | EC2 Services | 25% | Excellent | **4/4 deployed on EC2** (Docker Compose, IAM role, SSM-managed); RAG `/query` verified live on the box ✓ |
 | Image Analyser | 10% | Excellent (>75%) | **84.6%** rooms-only on fresh images ✓ |
 | Guardrails | 10% | Excellent (<5% FP) | Built (Surface #4 was 11/11); fail-closed |
-| Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | **6/6 surfaces with pass rates** (#1 9/10, #2 10/10, #3 10/10, #4 11/11, #5 10/10, #6 9/10) |
+| Prompt Engineering Log | 25% | Excellent (5×5, pass rates) | **7/7 surfaces with pass rates** (#1 9/10, #2 10/10, #3 10/10, #4 11/11, #5 V1→V8 10/10, #6 9/10, #7 condition rubric 9/10 directional) |
 | WebUI + Ollama | 10% | Excellent | Built (Flask, 3 tabs) ✓ |
 
 ---
@@ -83,7 +83,7 @@ We reuse two things the student already built: `python_course/rag_app_aws/` (Bed
 - **Agent** `POST /agent/run` `{query}` → `{answer, tools_used[], reasoning_steps[]}`
 
 ## Prompt Engineering Log surfaces (25% — captured as we build)
-1. n8n Information Extractor systemPromptTemplate · 2. n8n AI Agent prompt + tool descriptions · 3. RAG insight/citation prompt (Gemini) · 4. Guardrails rail prompts (Gemini) · 5. Ollama real-estate system prompt. Each: ≥10 test cases + pass-rate. **Status — 6/6 surfaces with measured pass rates:** #1 Extractor **9/10 (0 inventions)** · #2 n8n-Agent **10/10 end-to-end** (+ brief V1→V4) · #3 RAG **10/10** · #4 Guardrails **11/11** · #5 Ollama V1→V6 **10/10** · #6 LangGraph routing **9/10**.
+1. n8n Information Extractor systemPromptTemplate · 2. n8n AI Agent prompt + tool descriptions · 3. RAG insight/citation prompt (Gemini) · 4. Guardrails rail prompts (Gemini) · 5. Ollama real-estate system prompt · 6. LangGraph tool descriptions · 7. image condition rubric (Gemini Vision). Each: ≥10 test cases + pass-rate. **Status — 7/7 surfaces with measured pass rates:** #1 Extractor **9/10 (0 inventions)** · #2 n8n-Agent **10/10 end-to-end** (+ brief V1→V4) · #3 RAG **10/10** · #4 Guardrails **11/11** · #5 Ollama V1→V8 **10/10** · #6 LangGraph routing **9/10** · #7 condition rubric **9/10 directional** (labels + serving).
 
 ## Committed extensions (extra credit — after MVP)
 1. **Managed vector store** — already satisfied by Bedrock KB; add a precision@3 benchmark + write-up.

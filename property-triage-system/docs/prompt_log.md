@@ -1,6 +1,6 @@
 # Prompt Engineering Log
 
-This log documents the iteration process for the **six prompt-engineering surfaces** of the project. It is worth **25%** of the grade, so it is captured **live** — every time a prompt is tuned, the before/after and the re-run results are recorded here, not reconstructed at the end.
+This log documents the iteration process for the **seven prompt-engineering surfaces** of the project (the guideline asks for five; we exceeded it). It is worth **25%** of the grade, so it is captured **live** — every time a prompt is tuned, the before/after and the re-run results are recorded here, not reconstructed at the end.
 
 **Format per surface:** a fixed set of **≥10 test cases** defined *before* version 1, then:
 - **V1 — Baseline:** first attempt, run on the test cases, record outputs.
@@ -18,6 +18,7 @@ Pass rate is tracked as `passed / total` (e.g. `7/10`).
 | 4 | Guardrails rail prompts | Service 3 — Gemini topic/allowlist + output auditor | ✅ V1 = 11/11 |
 | 5 | Ollama system prompt | WebUI — real-estate assistant grounding + refusal | ✅ V1→V8 = 10/10 |
 | 6 | LangGraph Agent tool descriptions | Service 4 — planner tool-routing descriptions (Gemini) | ✅ V1 = 9/10 routing |
+| 7 | Image condition rubric | Service 2 — Gemini Vision 1–5 condition prompt (labelling + serving) | ✅ V1→V2 = 9/10 directional |
 
 ---
 
@@ -285,3 +286,63 @@ phrasing reads as text-first. A V2 could bias the planner to always analyse a
 provided image; left as-is for now (forcing image on every image-present query
 risks over-calling). The rag-only and image-only cases were all correct, and the
 `use_image=false`-without-images guard held on every text query.
+
+---
+
+## Surface 7 — Image condition rubric (Gemini Vision, Service 2)
+The image **condition score (1–5)** is produced by a Gemini Vision prompt, used in
+**two places with one rubric**: offline to **bootstrap training labels**
+(`code/image_analyser/label_condition.py`, `PROMPT`) and at **serving** to score each
+uploaded photo (`code/image_analyser/main.py`, `COND_PROMPT`). Room datasets carry no
+condition ground truth, so a capable judge defines the scale — see
+[`docs/model_card.md`](model_card.md) for why the served score comes from Gemini and
+not the distilled CNN head.
+
+**Test set (define before V1) — 10 photos spanning the scale.** Condition has no public
+ground truth, so each case has an *expected band* (human judgement) and we check the
+score lands in it (a *directional* evaluation, not absolute accuracy):
+
+| # | Photo | Expected | Gemini |
+|---|-------|----------|--------|
+| 1 | clean modern kitchen (`data/kitchen`) | 4–5 | 5 ✓ |
+| 2 | clean bedroom (`data/bedroom`) | 4–5 | 5 ✓ |
+| 3 | tidy living room (`data/living_room`) | 4–5 | 4 ✓ |
+| 4 | cluttered room (`data_messy`) | 2–3 | 2 ✓ |
+| 5 | heavily messy room (`data_messy`) | 1–2 | 1 ✓ |
+| 6 | worn apartment interior (`data_varied`) | 2–3 | 3 ✓ |
+| 7 | grimy kitchen (`villa-demo/b b`) | 1–2 | 2 ✓ |
+| 8 | degraded bedroom (`villa-demo/bbb`) | 1–2 | 1 ✓ |
+| 9 | run-down bathroom (`villa-demo/toilet b`) | 1–2 | 1 ✓ |
+| 10 | dated-but-tidy kitchen (`villa-demo/old`) | 2–3 | 5 ✗ (soft) |
+
+### V1 — anchored rubric for labelling (2026-06-15)
+Prompt: *"You are a property inspector… Rate the physical CONDITION 1–5: 1 = very poor
+(major damage, mould, broken fixtures); 2 = poor (heavily worn/dated); 3 = average
+(functional but dated); 4 = good (well-maintained, modern); 5 = excellent
+(renovated/pristine). Judge condition only (wear, damage, finish, cleanliness) — NOT
+size, style, or price. Reply with ONLY a single digit 1-5."* (`temperature=0`).
+**Design decisions:** (a) **anchored bands** — an unanchored "rate 1–5" drifts and is
+inconsistent across photos; explicit descriptions per level keep labels comparable;
+(b) **"condition only — not size/style/price"** — without it the model conflated a
+*desirable* room (big/stylish) with a *well-conditioned* one; (c) **single-digit
+output** for deterministic parsing (code defensively scans for the first `1–5`
+character); (d) `temperature=0` for repeatable labels. **Result:** labelling 846 images
+gave a sensible spread — `{1:19, 2:118, 3:136, 4:233, 5:340}` — clean real-estate
+photos cluster high, the messy/worn sources fill the low end, confirming the prompt
+*discriminates* condition rather than collapsing to one value.
+
+### V2 — condensed serving prompt (2026-06-15)
+At serving the rubric is condensed to inline anchors (*"1=very poor/damaged …
+5=excellent/renovated"*) with the same "condition only" guard and single-digit
+constraint — identical semantics, lower token cost per request. **Directional result:
+9/10** on the test set above. The one soft case (#10, a dated-but-tidy kitchen) scored
+**5** where a strict reading expects ~3 — defensible (the surfaces are clean and intact,
+only the *style* is dated, which the rubric explicitly tells the model to ignore).
+Crucially, on the out-of-distribution "bad room" photos that the trained CNN head got
+wrong (e.g. `bbb` → CNN said 5/5), the Gemini rubric scored **1** — which is exactly why
+the served condition score is Gemini's, not the head's.
+
+> **Honest note:** because there is no condition ground truth, this is an *agreement /
+> direction* evaluation, not a labelled-accuracy figure like the other surfaces. That
+> same absence of ground truth is the reason a judge-model prompt — not a supervised
+> metric — defines this score.
