@@ -288,11 +288,11 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { \"status\": \"ok\", \"routing\": $('LLM Chain').item.json.output.routing, \"brief_markdown\": $('LLM Chain').item.json.output.brief_markdown, \"extracted\": $('Information Extractor').item.json, \"guardrail\": { \"input_pass\": true, \"output_pass\": $('Guardrails Output').item.json.pass } } }}",
+        "responseBody": "={{ { \"status\": \"ok\", \"routing\": $('LLM Chain').item.json.output.routing, \"assigned_team\": \"Residential Team\", \"brief_markdown\": $('LLM Chain').item.json.output.brief_markdown, \"extracted\": $('Information Extractor').item.json, \"guardrail\": { \"input_pass\": true, \"output_pass\": $('Guardrails Output').item.json.pass } } }}",
         "options": {}
       },
       "id": "ec57df87-b8a6-4ab7-9b13-e194416505d9",
-      "name": "Respond Brief",
+      "name": "Respond Residential",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
@@ -512,6 +512,21 @@
         1080,
         472
       ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"ok\", \"routing\": $('LLM Chain').item.json.output.routing, \"assigned_team\": \"Commercial Team\", \"brief_markdown\": $('LLM Chain').item.json.output.brief_markdown, \"extracted\": $('Information Extractor').item.json, \"guardrail\": { \"input_pass\": true, \"output_pass\": $('Guardrails Output').item.json.pass } } }}",
+        "options": {}
+      },
+      "id": "respond-commercial-1",
+      "name": "Respond Commercial",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        442
+      ]
     }
   ],
   "pinData": {},
@@ -564,21 +579,21 @@
       "main": [
         [
           {
-            "node": "Respond Brief",
+            "node": "Respond Commercial",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Respond Brief",
+            "node": "Respond Residential",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Respond Brief",
+            "node": "Respond Residential",
             "type": "main",
             "index": 0
           }
