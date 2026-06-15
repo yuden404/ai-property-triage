@@ -23,3 +23,6 @@ data/
 # Kaggle API credentials (never commit)
 kaggle.json
 **/kaggle.json
+
+# Submission artifact
+*_FinalProject.zip
