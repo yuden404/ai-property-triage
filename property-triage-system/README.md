@@ -8,7 +8,7 @@ right team. There is also a conversational assistant grounded on the listing cor
 
 **Author:** Yehuda Rokach · **Type:** Individual final project
 **Live demo (when the instance is running):** `http://34.232.184.39:5050`
-**Formal report:** [`PROJECT_BOOK.pdf`](PROJECT_BOOK.pdf) · **Demo script:** [`demo/demo_script.pdf`](demo/demo_script.pdf)
+**Formal report:** [`PROJECT_BOOK.pdf`](PROJECT_BOOK.pdf) · **Demo video:** `demo/` (5–8 min walkthrough)
 
 ---
 
@@ -42,7 +42,7 @@ code/
   agent_service/           Service 4 — LangGraph + Gemini
   n8n/n8n_flow.json        importable n8n workflow
 docs/                      prompt_log.md (25%), architecture.md, model_card.md
-demo/                      demo_script.pdf (+ the recorded video)
+demo/                      recorded demo video (5–8 min walkthrough)
 deploy/                    ec2-userdata.sh (bootstrap)
 tests/                     43-test offline pytest suite (AWS/Gemini/Ollama mocked)
 ```
