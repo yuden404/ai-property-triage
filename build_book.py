@@ -31,6 +31,7 @@ em { color: #666666; }
 .cover { text-align: center; padding-top: 5cm; }
 .cover h1 { font-size: 28pt; }
 .pagebreak { page-break-after: always; }
+img { width: 16cm; border: 1px solid #cccccc; margin: 6pt 0 2pt 0; }
 """
 
 

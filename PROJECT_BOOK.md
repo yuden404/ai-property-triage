@@ -54,6 +54,9 @@ The system has four layers, each communicating with the next over HTTP.
 
 A full architecture diagram and the intentional deviations from the guideline are in [`docs/architecture.md`](property-triage-system/docs/architecture.md).
 
+![n8n pipeline](book_figures/fig-n8n-flow.png)
+*Figure 1 — the n8n orchestration: webhook → guardrails-in → IF → Information Extractor → AI Agent (rag / image / property_agent tools) → LLM Chain → guardrails-out → router (residential / commercial).*
+
 ## 4. Technology Choices
 This project intentionally **assembles managed services** instead of hand-rolling each component, which is both the instructor's intent (a few hours of assembly) and good engineering for a solo build.
 
@@ -85,6 +88,15 @@ This project intentionally **assembles managed services** instead of hand-rollin
 ### 5.1 Web UI (built first)
 A 3-tab app served by **Flask** with a vanilla HTML/CSS/JS frontend. **Assistant** tab streams chat from the Ollama `/api/chat` endpoint (GPU), **grounded on the RAG service / Bedrock KB** — it builds its retrieval query from the recent conversation (so a vague follow-up keeps the topic) and pins any listing already named in the chat, answers by stable ID, refuses off-topic questions, and invents nothing (prompt surface #5, V8); photos of a referenced listing are shown beneath the reply (click → detail). **Submit Listing** tab uploads photos to **S3**, calls the **Image Analyser** on each, posts the description + agent name to the n8n webhook (behind a full-screen pipeline loader), and renders the brief + a per-photo room/condition grid; **accepted listings are ingested back into the KB** so they become comparables and the chat can answer about them. **Dashboard** tab shows live stats (Chart.js); each row opens a per-listing detail (description, brief, photos). Submitted listings and events persist in **Amazon DynamoDB** (durable across container rebuilds); photos are served from S3 by permanent URL. During early development the submit tab is tested against a mock brief so the whole UI is demoable before n8n exists.
 
+![dashboard](book_figures/fig-dashboard.png)
+*Figure 2 — monitoring dashboard: listings processed, guardrail-rejection rate, average condition, exec time, listings-by-team (residential + commercial), and per-listing condition / outcomes charts.*
+
+![listing detail](book_figures/fig-listing-detail.png)
+*Figure 3 — per-listing detail (dashboard click-through): the generated brief plus each uploaded photo with its room type and 1–5 condition score.*
+
+![assistant with photos](book_figures/fig-chat-photos.png)
+*Figure 4 — the KB-grounded assistant: it answers about the real corpus by stable listing ID and surfaces the referenced listing's photos beneath the reply.*
+
 ### 5.2 RAG service (`POST /query`)
 Embeds the description and retrieves the top-3 most similar past listings from a Bedrock Knowledge Base pre-populated with ≥20 synthetic listings, then generates a short insight with Gemini that cites the listing it drew from and never fabricates facts. Output: `{ similar_listings, insight }` (a lightweight `retrieve-only` mode skips the insight — used by the assistant chat). **Accepted submissions are ingested back into the KB** (text written to the S3 data source + an ingestion job), so each new listing becomes a retrievable comparable for future queries and for the chat.
 
@@ -92,7 +104,10 @@ Embeds the description and retrieves the top-3 most similar past listings from a
 A transfer-learning EfficientNet-B0 (ImageNet weights, frozen backbone) with **two heads on a shared backbone**: a room-type head over **7 classes** (kitchen, bathroom, living room, bedroom, exterior, other, and a **`not_a_room`** reject class added beyond the spec so non-property photos are flagged rather than forced into a room) and a **condition-score head (1–5)** — the spec's "second output head". Below a 0.55 confidence threshold the room is `uncertain`. Output: `{ room_type, condition_score, confidence }`. Room labels come from public Kaggle datasets via `kagglehub` (500/class; rooms from *robinreni/house-rooms*, exterior from *mikhailma* street data, negatives from *prasunroy/natural-images*). Condition labels — for which no public ground truth exists — were **bootstrapped with Gemini Vision** over 846 images (clean rooms plus lower-condition sources for range: *messy-vs-clean-room* and real apartment photos from *home-bro-images*), then distilled into the head with inverse-frequency class weights. **Serving is a hybrid:** room type comes from the CNN; the **condition score is served by Gemini Vision** because the trained head, limited by available data, was unreliable on degraded-but-tidy rooms — the head satisfies the spec and is the offline fallback. Full evaluation in [`docs/model_card.md`](property-triage-system/docs/model_card.md).
 
 ### 5.4 Guardrails service (`POST /check/input`, `POST /check/output`)
-Input check: Bedrock `ApplyGuardrail` for safety (content filters, denied topics, profanity) plus a Gemini classifier that accepts only genuine property listings in the expected language (rejecting others, including unexpected languages — the multilingual extension). Output check: Bedrock safety plus a Gemini factuality-vs-source check that catches invented prices, fabricated certifications, and false legal claims. Output: `{ pass, reason, safe_text }`. (PII masking was removed — the system has no email/phone fields — and `_apply_guardrail` fails *closed* on any intervention.)
+Input check: Bedrock `ApplyGuardrail` for safety (content filters, denied topics, profanity) plus a Gemini classifier that accepts only genuine property listings in the expected language (rejecting others, including unexpected languages — the multilingual extension). Output check: Bedrock safety plus a Gemini factuality-vs-source check that catches invented prices, fabricated certifications, and false legal claims. Output: `{ pass, reason, safe_text }`. (PII masking was removed — the system has no email/phone fields — and `_apply_guardrail` fails *closed* on any intervention — including if the Bedrock call itself errors.)
+
+![guardrail rejection](book_figures/fig-guardrail-reject.png)
+*Figure 5 — the input guardrail rejecting a non-listing (a cake recipe) with a clear reason and no brief produced; spam, off-topic and unsupported-language submissions are blocked the same way.*
 
 ### 5.5 LangGraph Agent (`POST /agent/run`)
 A 3-node state graph — planner → tool executor → synthesiser — using Gemini, where the executor calls the RAG and Image Analyser services. Answers multi-step questions (e.g., "what renovation work would bring this property to condition score 5?"). Output: `{ answer, tools_used, reasoning_steps }`.
@@ -114,7 +129,13 @@ Seven prompt surfaces are tuned and logged with ≥10 test cases and a measured 
 
 **Testing.** A 43-test offline `pytest` suite (AWS/Gemini/Ollama mocked) covers the shared helpers, all four services, and the WebUI — re-runnable with no credentials or network.
 
-*Still to do:* RAG precision@3 benchmark (managed-vector-store extension), and an end-to-end run with screenshots once n8n is wired.
+![successful execution](book_figures/fig-n8n-success.png)
+*Figure 6 — a successful end-to-end n8n execution: every node green, from webhook through both guardrails to the router.*
+
+![assistant follow-up coherence](book_figures/fig-chat-v8.png)
+*Figure 7 — assistant follow-up coherence (Surface #5 V8): "which listings need renovation?" cites L015, and "give me info about L015" stays consistent — no contradiction across turns.*
+
+*Optional extension still open:* a RAG precision@3 benchmark for the managed-vector-store write-up.
 
 ## 8. Deployment Notes
 The full stack — the four FastAPI services, n8n, Ollama, and the WebUI — runs on a single **AWS EC2** instance via Docker Compose, as a **public site on the internet**, verified end-to-end.
