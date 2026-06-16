@@ -23,5 +23,5 @@ code/image_analyser/data_varied/
 # OS
 .DS_Store
 
-# Personal demo prep — not a submission artifact
-demo/demo_script.*
+# demo/ (recorded video + script) — large, ships in the submission ZIP, not git
+demo/
