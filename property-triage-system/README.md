@@ -27,6 +27,39 @@ right team. There is also a conversational assistant grounded on the listing cor
 
 Full diagram + intentional deviations: [`docs/architecture.md`](docs/architecture.md).
 
+## Screenshots
+
+**n8n orchestration** — the 8-node pipeline (webhook → guardrails-in → IF → Information
+Extractor → AI Agent with the rag / image / property_agent tools → LLM Chain →
+guardrails-out → router):
+
+![n8n pipeline](docs/figures/fig-n8n-flow.png)
+
+**Submit → brief + per-photo analysis** — the AI brief plus each uploaded photo's room
+type and 1–5 condition score:
+
+![listing detail](docs/figures/fig-listing-detail.png)
+
+**Monitoring dashboard** — listings processed, guardrail-rejection rate, average
+condition, exec time, listings-by-team (residential + commercial) and charts:
+
+![dashboard](docs/figures/fig-dashboard.png)
+
+**KB-grounded assistant** — answers about the real corpus by stable listing ID and
+shows the referenced listing's photos beneath the reply:
+
+![assistant with photos](docs/figures/fig-chat-photos.png)
+
+**Follow-up coherence (prompt Surface #5 V8)** — a vague follow-up keeps the topic and
+the listing it discussed, with no self-contradiction across turns:
+
+![assistant follow-up](docs/figures/fig-chat-v8.png)
+
+**Guardrail rejection** — a non-listing (here, a recipe) is blocked at the input rail
+with a clear reason and no brief produced:
+
+![guardrail rejection](docs/figures/fig-guardrail-reject.png)
+
 ## Repository layout
 
 ```
@@ -41,7 +74,7 @@ code/
   guardrails_service/      Service 3 — Bedrock Guardrails + Gemini
   agent_service/           Service 4 — LangGraph + Gemini
   n8n/n8n_flow.json        importable n8n workflow
-docs/                      prompt_log.md (25%), architecture.md, model_card.md
+docs/                      prompt_log.md (25%), architecture.md, model_card.md, figures/
 demo/                      recorded demo video (5–8 min walkthrough)
 deploy/                    ec2-userdata.sh (bootstrap)
 tests/                     43-test offline pytest suite (AWS/Gemini/Ollama mocked)
